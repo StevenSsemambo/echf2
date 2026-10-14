@@ -226,17 +226,55 @@ const ECHO_BELIEFS = [
 ];
 
 // ── SPEECH SYNTHESIS ──────────────────────────────────────────────────────────
-const voiceRef = { current: null };
+// User voice preferences (persisted in localStorage — free, no backend)
+const VOICE_KEY = "yoecho_voice_prefs";
+const voicePrefs = { gender:"female", tone:"warm", pitch:1.0, voiceName:"" };
+try { Object.assign(voicePrefs, JSON.parse(localStorage.getItem(VOICE_KEY) || "{}")); } catch(e) {}
+function saveVoicePrefs() { try { localStorage.setItem(VOICE_KEY, JSON.stringify(voicePrefs)); } catch(e) {} }
+
+// Tone presets are multipliers applied on top of Echo's per-mood tuning
+const TONES = {
+  calm:   { label:"Calm",   rate:.92, pitch:.96 },
+  warm:   { label:"Warm",   rate:1.0, pitch:1.0 },
+  bright: { label:"Bright", rate:1.08, pitch:1.07 },
+  deep:   { label:"Deep",   rate:.95, pitch:.88 },
+};
+
+const FEMALE_RE = /female|samantha|karen|moira|fiona|tessa|victoria|allison|\bava\b|susan|zira|hazel|heather|catherine|aria|jenny|libby|sonia|emily|natasha|clara|kate|serena|zoe|nicky|joanna|amy|salli|kimberly|ivy|ruth|olivia|michelle|jessa|ana\b|mia\b/i;
+const MALE_RE = /\bmale|daniel|\balex\b|fred|\btom\b|oliver|arthur|david|\bmark\b|james|george|\bguy\b|ryan|christopher|eric|rishi|aaron|gordon|\blee\b|matthew|joey|justin|kevin|brian|russell|thomas|ralph|liam|davis/i;
+const QUALITY_RE = /natural|neural|enhanced|premium|google/i;
+function voiceGender(v) {
+  if (FEMALE_RE.test(v.name)) return "female";
+  if (MALE_RE.test(v.name)) return "male";
+  return null;
+}
+function getEnglishVoices() {
+  if (!window.speechSynthesis) return [];
+  const all = window.speechSynthesis.getVoices();
+  const en = all.filter(v => (v.lang||"").toLowerCase().startsWith("en"));
+  return en.length ? en : all;
+}
+// Returns { voice, matched } — matched=false means no voice of the chosen gender is installed
+function pickVoice() {
+  const vs = getEnglishVoices();
+  if (!vs.length) return { voice:null, matched:true };
+  if (voicePrefs.voiceName) {
+    const exact = vs.find(v => v.name === voicePrefs.voiceName);
+    if (exact) return { voice:exact, matched:true };
+  }
+  const want = voicePrefs.gender;
+  const pool = vs.filter(v => voiceGender(v) === want);
+  const rank = v => (QUALITY_RE.test(v.name)?2:0) + (/en-(us|gb)/i.test(v.lang)?1:0);
+  if (pool.length) return { voice: pool.sort((a,b)=>rank(b)-rank(a))[0], matched:true };
+  // No explicit match: for female, an unlabelled voice is usually fine; for male we fall back + deepen pitch
+  const neutral = vs.filter(v => voiceGender(v) === null).sort((a,b)=>rank(b)-rank(a));
+  const fallback = neutral[0] || vs[0];
+  return { voice:fallback, matched: want === "female" && voiceGender(fallback) !== "male" };
+}
 function initVoice() {
   if (!window.speechSynthesis) return;
-  const set = () => {
-    const vs = window.speechSynthesis.getVoices();
-    voiceRef.current =
-      vs.find(v => v.name.includes("Samantha")||v.name.includes("Karen")||v.name.includes("Moira")||v.name.includes("Fiona")) ||
-      vs.find(v => v.lang.startsWith("en-") && !v.name.toLowerCase().includes("male")) ||
-      vs.find(v => v.lang.startsWith("en")) || vs[0] || null;
-  };
-  set(); window.speechSynthesis.onvoiceschanged = set;
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 function chunkText(text) {
@@ -285,7 +323,12 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
     love:{rate:.83,pitch:1.08},   confusion:{rate:.86,pitch:.98},
   };
   const t = tunes[mood] || tunes.neutral;
-  const finalRate = Math.min(2.0, Math.max(0.3, t.rate * speedMult));
+  const tone = TONES[voicePrefs.tone] || TONES.warm;
+  const picked = pickVoice();
+  // If the device has no voice of the chosen gender, shift pitch to approximate it
+  const genderShift = picked.matched ? 1 : (voicePrefs.gender === "male" ? 0.78 : 1.12);
+  const finalRate = Math.min(2.0, Math.max(0.3, t.rate * tone.rate * speedMult));
+  const finalPitch = Math.min(2.0, Math.max(0.1, t.pitch * tone.pitch * voicePrefs.pitch * genderShift));
   let idx = 0, started = false;
 
   // Chrome pause bug — resume periodically if paused
@@ -302,8 +345,8 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
       clearInterval(_resumeHack); _resumeHack = null; onEnd?.(); return;
     }
     const utt = new SpeechSynthesisUtterance(chunks[idx]);
-    if (voiceRef.current) utt.voice = voiceRef.current;
-    utt.rate = finalRate; utt.pitch = t.pitch; utt.volume = 0.92; utt.lang = "en-US";
+    if (picked.voice) utt.voice = picked.voice;
+    utt.rate = finalRate; utt.pitch = finalPitch; utt.volume = 0.92; utt.lang = picked.voice?.lang || "en-US";
     utt.onstart = () => {
       if (_speakGen !== myGen) return;
       if (!started) { started = true; onStart?.(); }
@@ -771,7 +814,7 @@ function Hdr({title,sub,onBack,right,mood}){
   </div>;
 }
 
-function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSpeed,onSpeedChange}){
+function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSpeed,onSpeedChange,vp,onVoiceChange,panelOpen,onPanelToggle}){
   const m=MOODS[mood];
   const speedLabel=speechSpeed<=0.6?"Slowest":speechSpeed<=0.75?"Slow":speechSpeed<=0.95?"Normal":speechSpeed<=1.2?"Fast":"Fastest";
   return <div style={{borderBottom:"1px solid rgba(196,168,130,.07)",background:"rgba(8,5,2,.7)",flexShrink:0,zIndex:10}}>
@@ -780,6 +823,7 @@ function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSp
         {voiceOn?"🔊 VOICE ON":"🔇 VOICE OFF"}
       </button>
       <button onClick={onVoiceMode} style={{fontSize:8,fontFamily:SS,letterSpacing:".09em",padding:"3px 9px",borderRadius:11,border:"1px solid rgba(196,168,130,.16)",background:"transparent",color:"rgba(196,168,130,.35)",cursor:"pointer"}}>◎ VOICE MODE</button>
+      {voiceOn&&<button onClick={onPanelToggle} style={{fontSize:8,fontFamily:SS,letterSpacing:".09em",padding:"3px 9px",borderRadius:11,border:`1px solid ${panelOpen?m.acc+"44":"rgba(196,168,130,.16)"}`,background:panelOpen?m.acc+"14":"transparent",color:panelOpen?m.acc:"rgba(196,168,130,.35)",cursor:"pointer"}}>⚙ VOICE STYLE</button>}
       {(speaking||listening)&&<div style={{display:"flex",alignItems:"center",gap:7,marginLeft:"auto"}}>
         <Wave active bars={5} color={m.acc} h={16}/>
         <span style={{fontSize:7,color:m.acc,fontFamily:SS,opacity:.55,letterSpacing:".08em"}}>{speaking?"ECHO SPEAKING":"LISTENING"}</span>
@@ -792,6 +836,37 @@ function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSp
       <span style={{fontSize:7,color:"rgba(196,168,130,.35)",fontFamily:SS}}>🐇</span>
       <span style={{fontSize:7,color:m.acc,fontFamily:SS,letterSpacing:".08em",minWidth:38,textAlign:"right",opacity:.7}}>{speedLabel}</span>
     </div>}
+    {voiceOn&&panelOpen&&(()=>{
+      const chip=(on)=>({fontSize:8,fontFamily:SS,letterSpacing:".08em",padding:"4px 11px",borderRadius:11,cursor:"pointer",border:`1px solid ${on?m.acc+"66":"rgba(196,168,130,.18)"}`,background:on?m.acc+"1a":"transparent",color:on?m.acc:"rgba(196,168,130,.45)"});
+      const lab={fontSize:7,color:"rgba(196,168,130,.4)",fontFamily:SS,letterSpacing:".1em",minWidth:44};
+      const voices=getEnglishVoices();
+      const noMatch=window.speechSynthesis&&voices.length&&!pickVoice().matched;
+      return <div style={{display:"flex",flexDirection:"column",gap:8,padding:"8px 14px 10px",borderTop:"1px solid rgba(196,168,130,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={lab}>VOICE</span>
+          <button style={chip(vp.gender==="female")} onClick={()=>onVoiceChange({gender:"female",voiceName:""})}>♀ FEMALE</button>
+          <button style={chip(vp.gender==="male")} onClick={()=>onVoiceChange({gender:"male",voiceName:""})}>♂ MALE</button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={lab}>TONE</span>
+          {Object.entries(TONES).map(([k,t])=><button key={k} style={chip(vp.tone===k)} onClick={()=>onVoiceChange({tone:k})}>{t.label.toUpperCase()}</button>)}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={lab}>PITCH</span>
+          <input type="range" min="0.7" max="1.3" step="0.05" value={vp.pitch} onChange={e=>onVoiceChange({pitch:parseFloat(e.target.value)})} style={{flex:1,accentColor:m.acc,cursor:"pointer",height:3}}/>
+          <span style={{fontSize:7,color:m.acc,fontFamily:SS,minWidth:30,textAlign:"right",opacity:.7}}>{vp.pitch.toFixed(2)}x</span>
+        </div>
+        {voices.length>0&&<div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={lab}>DEVICE</span>
+          <select value={vp.voiceName} onChange={e=>onVoiceChange({voiceName:e.target.value})} style={{flex:1,minWidth:0,fontSize:10,padding:"4px 6px",borderRadius:8,background:"rgba(20,14,8,.9)",color:"rgba(196,168,130,.8)",border:"1px solid rgba(196,168,130,.2)"}}>
+            <option value="">Auto ({vp.gender})</option>
+            {voices.map(v=><option key={v.name+v.lang} value={v.name}>{v.name} ({v.lang})</option>)}
+          </select>
+        </div>}
+        {noMatch&&<div style={{fontSize:9,color:"rgba(196,168,130,.5)",fontFamily:SS,lineHeight:1.5}}>No {vp.gender} voice found on this device, so Echo is shifting pitch to approximate it. You can pick a specific voice from the list above.</div>}
+        <div><button style={chip(false)} onClick={()=>speakText("Hi, I'm Echo. This is how I sound. I'm here whenever you want to talk.","neutral",null,null,speechSpeed)}>▶ TEST VOICE</button></div>
+      </div>;
+    })()}
   </div>;
 }
 
@@ -1126,6 +1201,9 @@ function YoEcho(){
   const[voiceMode,setVoiceMode]=useState(false);
   const[voiceOn,setVoiceOn]  =useState(true);
   const[speechSpeed,setSpeechSpeed]=useState(1.0);
+  const[vp,setVp]=useState(()=>({...voicePrefs}));
+  const[voicePanel,setVoicePanel]=useState(false);
+  const changeVoice=(patch)=>{ Object.assign(voicePrefs,patch); saveVoicePrefs(); setVp({...voicePrefs}); };
   const[listening,setListening]=useState(false);
   const[speaking,setSpeaking]=useState(false);
   const[transcript,setTranscript]=useState("");
@@ -1646,9 +1724,10 @@ What was your real first thought — before the polished reply?`}],
   const scrollS={flex:1,overflowY:"auto",padding:"18px 14px 12px",maxWidth:640,margin:"0 auto",width:"100%",position:"relative",zIndex:5};
   const infoS={flex:1,overflowY:"auto",padding:"16px 14px",maxWidth:600,margin:"0 auto",width:"100%",position:"relative",zIndex:5};
 
-  const VBar=()=><VoiceBar mood={mood} speaking={speaking} listening={listening} voiceOn={voiceOn}
+  const VBarEl=<VoiceBar mood={mood} speaking={speaking} listening={listening} voiceOn={voiceOn}
     onToggle={()=>{ if(speaking)stopEcho(); setVoiceOn(v=>!v); }}
-    onVoiceMode={()=>setVoiceMode(true)} speechSpeed={speechSpeed} onSpeedChange={setSpeechSpeed}/>;
+    onVoiceMode={()=>setVoiceMode(true)} speechSpeed={speechSpeed} onSpeedChange={setSpeechSpeed}
+    vp={vp} onVoiceChange={changeVoice} panelOpen={voicePanel} onPanelToggle={()=>setVoicePanel(v=>!v)}/>;
 
   const MicModal=({onRetry})=>micModal?<MicPermissionModal mood={mood} onClose={()=>setMicModal(false)} onRetry={()=>{setMicModal(false);setTimeout(onRetry,100);}}/>:null;
 
@@ -1864,7 +1943,7 @@ What was your real first thought — before the polished reply?`}],
           <button onClick={()=>createNewChat()} style={{background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,border:"none",borderRadius:14,padding:"5px 10px",color:"#0c0905",fontSize:8,letterSpacing:".1em",cursor:"pointer",fontFamily:SS,fontWeight:700}}>+ NEW</button>
           <Orb size={28} mood={mood} tick={tick} speaking={speaking} listening={listening}/>
         </div>}/>
-      <VBar/>
+      {VBarEl}
       <div ref={chatScrollRef} style={{...scrollS}}
         onScroll={e=>{const el=e.target;setShowScrollBtn(el.scrollHeight-el.scrollTop-el.clientHeight>100);}}>
         {chatMsgs.map((msg,i)=>{
@@ -1895,7 +1974,7 @@ What was your real first thought — before the polished reply?`}],
     <div style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",fontFamily:SF}}>
       <style>{CSS}</style><Bg mood={mood}/>
       <Hdr title="YOUR WISER SELF" sub="speaking honestly" onBack={()=>setScreen("home")} mood={mood} right={<Orb size={34} mood={mood} tick={tick} speaking={speaking}/>}/>
-      <VBar/>
+      {VBarEl}
       <div style={scrollS}>
         {wiserMsgs.map((msg,i)=><Bubble key={i} msg={msg} isWiser mood={mood} activeSpeaking={speakingBubble===i} onSpeak={text=>handleBubbleSpeak(text,i)}/>)}
         {wiserBusy&&<Dots mood={mood}/>}
@@ -2007,7 +2086,7 @@ What was your real first thought — before the polished reply?`}],
             <div style={{fontSize:7,color:"rgba(168,196,130,.5)",fontFamily:SS,letterSpacing:".08em",maxWidth:120,textAlign:"right",lineHeight:1.4}}>{d.tag}</div>
             <Orb size={28} mood={mood} tick={tick} speaking={speaking}/>
           </div>}/>
-        <VBar/>
+        {VBarEl}
         {/* Position banner */}
         <div style={{flexShrink:0,padding:"8px 16px",background:"rgba(168,196,130,.06)",borderBottom:"1px solid rgba(168,196,130,.12)"}}>
           <div style={{fontSize:10,color:"rgba(168,196,130,.7)",lineHeight:1.75,fontStyle:"italic",maxWidth:600,margin:"0 auto",fontFamily:SF}}>
@@ -2217,7 +2296,7 @@ What was your real first thought — before the polished reply?`}],
           {tutorMsgs.length>0&&<button onClick={()=>setTutorMsgs([])} style={{background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.24)",borderRadius:14,padding:"5px 11px",color:m.acc,fontSize:8,letterSpacing:".1em",cursor:"pointer",fontFamily:SS}}>CLEAR</button>}
           <Orb size={34} mood={mood} tick={tick} speaking={speaking}/>
         </div>}/>
-      <VBar/>
+      {VBarEl}
       <div style={{flex:1,overflowY:"auto",padding:"16px 14px 12px",maxWidth:680,margin:"0 auto",width:"100%",position:"relative",zIndex:5}}>
         {tutorMsgs.length===0&&(
           <div style={{textAlign:"center",padding:"40px 16px"}}>
