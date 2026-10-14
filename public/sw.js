@@ -1,6 +1,6 @@
 // ── YoEcho Service Worker ─────────────────────────────────────────────────────
 // v4 — bumped so devices drop the old cache after the Gemini/Groq switch
-const CACHE_NAME = "yoecho-pwa-v4";
+const CACHE_NAME = "yoecho-pwa-v5";
 
 const PRECACHE_ASSETS = [
   "/",
