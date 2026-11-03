@@ -298,6 +298,7 @@ let _resumeHack = null;
 
 function stopSpeaking() {
   _speakGen++;
+  try { window.EchoFace && window.EchoFace.stop(); } catch(e) {}
   if (_resumeHack) { clearInterval(_resumeHack); _resumeHack = null; }
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
@@ -347,17 +348,25 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
     const utt = new SpeechSynthesisUtterance(chunks[idx]);
     if (picked.voice) utt.voice = picked.voice;
     utt.rate = finalRate; utt.pitch = finalPitch; utt.volume = 0.92; utt.lang = picked.voice?.lang || "en-US";
+    const chunkNow = chunks[idx];
     utt.onstart = () => {
       if (_speakGen !== myGen) return;
+      try { window.EchoFace && window.EchoFace.utteranceStart(chunkNow); } catch(e) {}
       if (!started) { started = true; onStart?.(); }
+    };
+    utt.onboundary = (e) => {
+      if (_speakGen !== myGen) return;
+      try { window.EchoFace && window.EchoFace.boundary(e.charIndex); } catch(err) {}
     };
     utt.onend = () => {
       if (_speakGen !== myGen) return;
+      try { window.EchoFace && window.EchoFace.utteranceEnd(); } catch(e) {}
       idx++; next();
     };
     utt.onerror = (e) => {
       if (_speakGen !== myGen) return;
       if (e.error === "interrupted" || e.error === "canceled") return;
+      try { window.EchoFace && window.EchoFace.utteranceEnd(); } catch(err) {}
       idx++; next();
     };
     window.speechSynthesis.speak(utt);
@@ -365,6 +374,42 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
 
   // Give cancel() time to clear Chrome queue before starting
   setTimeout(next, 120);
+}
+
+// ── 3D FACE (lazy-loaded: Three.js + avatar engine are same-origin, so they cache for offline) ──
+const FACE_KEY = "yoecho_face_prefs";
+const facePrefs = { on: true, avatar: "f1", tone: "1,1,1" };
+try {
+  const raw = localStorage.getItem(FACE_KEY);
+  if (raw) Object.assign(facePrefs, JSON.parse(raw));
+  else if (navigator.deviceMemory && navigator.deviceMemory < 2) facePrefs.on = false; // very low-memory phones start with the orb
+} catch(e) {}
+function saveFacePrefs() { try { localStorage.setItem(FACE_KEY, JSON.stringify(facePrefs)); } catch(e) {} }
+let _faceSupported = null;
+function faceSupported() {
+  if (_faceSupported === null) {
+    try { const c = document.createElement("canvas"); _faceSupported = !!(c.getContext("webgl") || c.getContext("experimental-webgl")); }
+    catch(e) { _faceSupported = false; }
+  }
+  return _faceSupported;
+}
+let _facePromise = null;
+function loadEchoFace() {
+  if (_facePromise) return _facePromise;
+  const add = src => new Promise((res, rej) => {
+    const el = document.createElement("script");
+    el.src = src; el.onload = res; el.onerror = () => rej(new Error("could not load " + src));
+    document.head.appendChild(el);
+  });
+  const need = [
+    [() => window.THREE, "/vendor/three.min.js?v=128"],
+    [() => window.THREE && window.THREE.GLTFLoader, "/vendor/GLTFLoader.js?v=128"],
+    [() => window.EchoFace, "/echo-face.js?v=1"],
+  ];
+  let p = Promise.resolve();
+  need.forEach(([ok, src]) => { p = p.then(() => ok() ? null : add(src)); });
+  _facePromise = p.catch(e => { _facePromise = null; throw e; });
+  return _facePromise;
 }
 
 // ── SPEECH RECOGNITION ────────────────────────────────────────────────────────
@@ -981,24 +1026,102 @@ function MicPermissionModal({mood,onClose,onRetry}){
   </div>;
 }
 
+const SKIN_TONES = [["1,1,1","#e9cdb8","Original"],["0.8,0.62,0.5","#cf9f80","Tan"],["0.55,0.38,0.28","#8e624a","Brown"],["0.38,0.25,0.18","#664331","Dark brown"]];
+const FACE_AVATARS = [["f1","DARK HAIR"],["f2","BLACK HAIR"]];
+
+// The 3D face. Shows the orb while Three.js and the avatar download, then fades the face in.
+function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
+  const host=useRef(null), ctl=useRef(null), failRef=useRef(onFail);
+  const[ready,setReady]=useState(false);
+  const m=MOODS[mood];
+  failRef.current=onFail;
+  useEffect(()=>{
+    let dead=false, api=null;
+    loadEchoFace().then(()=>{
+      if(dead||!host.current) return;
+      api=window.EchoFace.mount(host.current,{avatar,tone,mood,moodColor:MC[mood],onFail:()=>failRef.current&&failRef.current()});
+      ctl.current=api;
+      return api.ready.then(()=>{ if(!dead) setReady(true); });
+    }).catch(err=>{ console.warn("YoEcho face unavailable:",err); if(!dead&&failRef.current) failRef.current(); });
+    return()=>{ dead=true; if(api) api.unmount(); ctl.current=null; };
+  },[]);
+  useEffect(()=>{ctl.current&&ctl.current.setMood(mood,MC[mood]);},[mood]);
+  useEffect(()=>{ctl.current&&ctl.current.setListening(listening);},[listening]);
+  useEffect(()=>{ctl.current&&ctl.current.setThinking(thinking);},[thinking]);
+  useEffect(()=>{ctl.current&&ctl.current.setTone(tone);},[tone]);
+  useEffect(()=>{
+    const c=ctl.current;
+    if(c&&ready&&c.avatarKey!==avatar) c.setAvatar(avatar).catch(()=>{});
+  },[avatar,ready]);
+  const soft=a=>m.glow.replace(/[\d.]+\)$/,a+")");
+  return <div style={{position:"relative",height:"min(34vh,300px)",width:"min(27.2vh,240px)",borderRadius:28,overflow:"hidden",
+      background:`radial-gradient(ellipse at 50% 38%,${soft(".24")},rgba(12,9,5,.92) 74%)`,
+      border:`1px solid ${m.acc}${speaking?"77":"33"}`,
+      boxShadow:speaking?`0 0 46px ${m.glow}`:`0 0 24px ${soft(".16")}`,transition:"box-shadow .4s,border-color .4s"}}>
+    <div ref={host} style={{position:"absolute",inset:0,opacity:ready?1:0,transition:"opacity .7s"}}/>
+    {!ready&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <Orb size={96} mood={mood} tick={tick} speaking={speaking} listening={listening}/>
+      <div style={{fontSize:8,letterSpacing:".2em",color:m.acc,opacity:.45,fontFamily:SS}}>WAKING UP…</div>
+    </div>}
+  </div>;
+}
+
 function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggle,onStopSpeak,speechSpeed,onSpeedChange}){
   const m=MOODS[mood];
   const[t,setT]=useState(0);
+  const[faceOn,setFaceOn]=useState(()=>facePrefs.on&&faceSupported());
+  const[note,setNote]=useState("");
+  const[look,setLook]=useState(false);
+  const[avatar,setAvatar]=useState(facePrefs.avatar);
+  const[tone,setTone]=useState(facePrefs.tone);
+  const[thinking,setThinking]=useState(false);
+  const prevL=useRef(false);
   useEffect(()=>{ const iv=setInterval(()=>setT(x=>x+1),180); return()=>clearInterval(iv); },[]);
+  // After the person finishes speaking and before Echo replies, the face looks like it is thinking
+  useEffect(()=>{ if(prevL.current&&!listening&&!speaking) setThinking(true); prevL.current=listening; },[listening]);
+  useEffect(()=>{ if(speaking||listening) setThinking(false); },[speaking,listening]);
+  useEffect(()=>{ if(!thinking) return; const id=setTimeout(()=>setThinking(false),12000); return()=>clearTimeout(id); },[thinking]);
+  const toggleFace=()=>{
+    if(!faceOn&&!faceSupported()){ setNote("3D isn't supported on this device"); return; }
+    const next=!faceOn; setNote(""); setFaceOn(next); facePrefs.on=next; saveFacePrefs();
+  };
+  const pickAvatar=k=>{ setAvatar(k); facePrefs.avatar=k; saveFacePrefs(); };
+  const pickTone=v=>{ setTone(v); facePrefs.tone=v; saveFacePrefs(); };
+  const failFace=()=>{ setFaceOn(false); setNote("Face couldn't load, showing the orb. It needs a connection the first time."); };
   const speedLabel=speechSpeed<=0.6?"Slowest":speechSpeed<=0.75?"Slow":speechSpeed<=0.95?"Normal":speechSpeed<=1.2?"Fast":"Fastest";
-  return <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.88)",backdropFilter:"blur(20px)"}}>
-    <div style={{fontSize:8,color:m.acc,letterSpacing:".22em",fontFamily:SS,marginBottom:28,opacity:.45}}>VOICE MODE</div>
-    <Orb size={160} mood={mood} tick={t} speaking={speaking} listening={listening}/>
-    <div style={{marginTop:28,textAlign:"center",minHeight:56}}>
-      <div style={{fontSize:10,color:m.acc,letterSpacing:".18em",fontFamily:SS,marginBottom:12,opacity:.75}}>
-        {speaking?"ECHO IS SPEAKING":listening?"LISTENING TO YOU":"READY"}
+  const chip=on=>({fontSize:8,letterSpacing:".14em",fontFamily:SS,padding:"6px 12px",borderRadius:99,cursor:"pointer",
+    background:on?`${m.acc}26`:"rgba(196,168,130,.06)",border:`1px solid ${on?m.acc+"66":"rgba(196,168,130,.18)"}`,color:on?m.acc:"rgba(196,168,130,.55)"});
+  const showWave=faceOn?listening:(speaking||listening);
+  return <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",overflowY:"auto",background:"rgba(0,0,0,.88)",backdropFilter:"blur(20px)"}}>
+   <div style={{margin:"auto",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"18px 0",width:"100%"}}>
+    <div style={{fontSize:8,color:m.acc,letterSpacing:".22em",fontFamily:SS,marginBottom:faceOn?14:28,opacity:.45}}>{faceOn?"FACE TO FACE":"VOICE MODE"}</div>
+    {faceOn
+      ?<FaceStage mood={mood} listening={listening} speaking={speaking} thinking={thinking} avatar={avatar} tone={tone} tick={t} onFail={failFace}/>
+      :<Orb size={160} mood={mood} tick={t} speaking={speaking} listening={listening}/>}
+    <div style={{display:"flex",gap:8,marginTop:14,alignItems:"center"}}>
+      <button onClick={toggleFace} style={chip(false)}>{faceOn?"○ ORB":"◉ FACE"}</button>
+      {faceOn&&<button onClick={()=>setLook(x=>!x)} style={chip(look)}>✦ LOOK</button>}
+    </div>
+    {faceOn&&look&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginTop:10}}>
+      <div style={{display:"flex",gap:8}}>
+        {FACE_AVATARS.map(([k,lab])=><button key={k} onClick={()=>pickAvatar(k)} style={chip(avatar===k)}>{lab}</button>)}
       </div>
-      {(speaking||listening)&&<div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Wave active bars={13} color={m.acc} h={30}/></div>}
+      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+        {SKIN_TONES.map(([v,col,lab])=><button key={v} onClick={()=>pickTone(v)} title={lab} aria-label={lab}
+          style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",padding:0,border:tone===v?`2px solid ${m.acc}`:"2px solid rgba(196,168,130,.2)",boxShadow:tone===v?`0 0 10px ${m.glow}`:"none"}}/>)}
+      </div>
+    </div>}
+    {note&&<div style={{marginTop:10,fontSize:9,color:"rgba(235,228,216,.45)",fontFamily:SF,fontStyle:"italic",maxWidth:240,textAlign:"center",lineHeight:1.6}}>{note}</div>}
+    <div style={{marginTop:faceOn?18:28,textAlign:"center",minHeight:56}}>
+      <div style={{fontSize:10,color:m.acc,letterSpacing:".18em",fontFamily:SS,marginBottom:12,opacity:.75}}>
+        {speaking?"ECHO IS SPEAKING":listening?"LISTENING TO YOU":thinking&&faceOn?"THINKING":"READY"}
+      </div>
+      {showWave&&<div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Wave active bars={13} color={m.acc} h={30}/></div>}
       <div style={{fontSize:13,color:"rgba(235,228,216,.55)",fontFamily:SF,fontStyle:"italic",maxWidth:260,lineHeight:1.85,padding:"0 20px"}}>
         {transcript||(speaking?"Speaking…":listening?"Say something…":"Tap the mic to speak")}
       </div>
     </div>
-    <div style={{display:"flex",gap:18,marginTop:40}}>
+    <div style={{display:"flex",gap:18,marginTop:faceOn?24:40}}>
       <button onClick={onMicToggle} style={{width:66,height:66,borderRadius:"50%",border:"none",cursor:"pointer",fontSize:26,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .25s",
         ...(listening?{background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,color:"#0c0905",boxShadow:`0 0 0 4px ${m.acc}44,0 0 32px ${m.glow}`,animation:"micPulse 1.2s ease-out infinite"}
           :{background:"rgba(196,168,130,.12)",border:`1px solid ${m.acc}44`,color:m.acc})}}>
@@ -1014,6 +1137,7 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
     </div>
     <div style={{marginTop:8,fontSize:7,color:"rgba(196,168,130,.25)",fontFamily:SS,letterSpacing:".08em"}}>SPEED: {speedLabel}</div>
     <div style={{marginTop:12,fontSize:8,color:"rgba(196,168,130,.2)",letterSpacing:".1em",fontFamily:SS}}>TAP 🎙 TO SPEAK · ✕ TO CLOSE</div>
+   </div>
   </div>;
 }
 

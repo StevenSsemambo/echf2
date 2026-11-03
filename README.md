@@ -138,3 +138,33 @@ The app will now appear on your home screen like a native app!
 ---
 
 ## Built by Steven Sema — SayMyTech Developers, Kampala Uganda
+
+---
+
+## 3D Face (Face to face mode)
+
+Open voice mode (the 🎙 button) and YoEcho appears with a 3D face that lip-syncs to its voice,
+reacts to its mood, looks attentive while you speak and thinks before it answers. It works in
+every mode that has voice (chat, wiser self, journal, debate, tutor).
+
+```
+public/
+├── echo-face.js        ← face engine (lip-sync, emotions, gestures, blinking, gaze)
+├── avatars/f1.glb      ← rigged avatar, dark hair  (~2.3 MB)
+├── avatars/f2.glb      ← rigged avatar, black hair (~2.2 MB)
+└── vendor/
+    ├── three.min.js    ← Three.js r128 (MIT, see THREE-LICENSE.txt)
+    └── GLTFLoader.js   ← GLB loader matching r128
+```
+
+- **Lazy-loaded.** Nothing above downloads until someone opens voice mode, so the first load of
+  the app is unchanged. After the first use the service worker caches it for offline use.
+- **Fallback.** No WebGL, a failed download, or a tap on `○ ORB` shows the original orb.
+- **Look.** `✦ LOOK` in voice mode switches avatar and skin tone. Choices are remembered
+  (`localStorage` key `yoecho_face_prefs`).
+- **Lip-sync timing.** The mouth follows the browser's spoken-word events. If it runs early or late
+  on a device, set `EchoFace.lipOffset` (milliseconds) in `echo-face.js`.
+- **Adding a new avatar.** It needs a standard humanoid skeleton (Hips, Spine, Neck, Head, arms)
+  and ARKit + Oculus viseme blendshapes (Ready Player Me avatars work). Put the `.glb` in
+  `public/avatars/` and add it to `AVATARS` in `echo-face.js` and `FACE_AVATARS` in `index.html`.
+  Draco/meshopt/KTX2-compressed files are not supported by the bundled loader.
