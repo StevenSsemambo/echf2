@@ -867,7 +867,7 @@ function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSp
       <button onClick={onToggle} style={{fontSize:8,fontFamily:SS,letterSpacing:".09em",padding:"3px 9px",borderRadius:11,border:`1px solid ${voiceOn?m.acc+"44":"rgba(196,168,130,.18)"}`,background:voiceOn?m.acc+"14":"transparent",color:voiceOn?m.acc:"rgba(196,168,130,.28)",cursor:"pointer"}}>
         {voiceOn?"🔊 VOICE ON":"🔇 VOICE OFF"}
       </button>
-      <button onClick={onVoiceMode} style={{fontSize:8,fontFamily:SS,letterSpacing:".09em",padding:"3px 9px",borderRadius:11,border:"1px solid rgba(196,168,130,.16)",background:"transparent",color:"rgba(196,168,130,.35)",cursor:"pointer"}}>◎ VOICE MODE</button>
+      <button onClick={onVoiceMode} style={{fontSize:9,fontFamily:SS,letterSpacing:".11em",fontWeight:600,padding:"4px 12px",borderRadius:12,border:`1px solid ${m.acc}88`,background:`${m.acc}22`,color:m.acc,cursor:"pointer",boxShadow:`0 0 12px ${m.glow}`}}>{facePrefs.on&&faceSupported()?"◉ FACE TO FACE":"◎ VOICE MODE"}</button>
       {voiceOn&&<button onClick={onPanelToggle} style={{fontSize:8,fontFamily:SS,letterSpacing:".09em",padding:"3px 9px",borderRadius:11,border:`1px solid ${panelOpen?m.acc+"44":"rgba(196,168,130,.16)"}`,background:panelOpen?m.acc+"14":"transparent",color:panelOpen?m.acc:"rgba(196,168,130,.35)",cursor:"pointer"}}>⚙ VOICE STYLE</button>}
       {(speaking||listening)&&<div style={{display:"flex",alignItems:"center",gap:7,marginLeft:"auto"}}>
         <Wave active bars={5} color={m.acc} h={16}/>
