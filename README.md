@@ -150,8 +150,8 @@ every mode that has voice (chat, wiser self, journal, debate, tutor).
 ```
 public/
 ├── echo-face.js        ← face engine (lip-sync, emotions, gestures, blinking, gaze)
-├── avatars/f1.glb      ← rigged avatar, dark hair  (~2.3 MB)
-├── avatars/f2.glb      ← rigged avatar, black hair (~2.2 MB)
+├── avatars/f1.glb      ← rigged avatar, dark hair  (gzip-packed: 0.8 MB, 2.3 MB unpacked)
+├── avatars/f2.glb      ← rigged avatar, black hair (gzip-packed: 0.7 MB, 2.2 MB unpacked)
 └── vendor/
     ├── three.min.js    ← Three.js r128 (MIT, see THREE-LICENSE.txt)
     └── GLTFLoader.js   ← GLB loader matching r128
@@ -162,9 +162,14 @@ public/
 - **Fallback.** No WebGL, a failed download, or a tap on `○ ORB` shows the original orb.
 - **Look.** `✦ LOOK` in voice mode switches avatar and skin tone. Choices are remembered
   (`localStorage` key `yoecho_face_prefs`).
-- **Lip-sync timing.** The mouth follows the browser's spoken-word events. If it runs early or late
-  on a device, set `EchoFace.lipOffset` (milliseconds) in `echo-face.js`.
+- **Lip-sync.** Words are turned into mouth shapes (a pronunciation layer in `echo-face.js`) and timed
+  from the browser's spoken-word events, so the lips re-lock to every word. Voices that give no word
+  events fall back to estimated timing, and the speed is learned per voice. Open `✦ LOOK` to
+  slide the lip delay (lips before the voice → slide right) and press `▶ TEST LIPS`; the panel also shows
+  whether the current voice is word-locked or estimated.
+- **Speed.** The face files start downloading while the chat is open, the face is built in the
+  background, and it stays warm when you close voice mode, so opening it is near-instant.
 - **Adding a new avatar.** It needs a standard humanoid skeleton (Hips, Spine, Neck, Head, arms)
-  and ARKit + Oculus viseme blendshapes (Ready Player Me avatars work). Put the `.glb` in
+  and ARKit + Oculus viseme blendshapes (Ready Player Me avatars work). Pack it with `gzip -9 -n -c my.glb > public/avatars/my.glb`, put it in
   `public/avatars/` and add it to `AVATARS` in `echo-face.js` and `FACE_AVATARS` in `index.html`.
   Draco/meshopt/KTX2-compressed files are not supported by the bundled loader.

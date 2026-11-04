@@ -351,12 +351,12 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
     const chunkNow = chunks[idx];
     utt.onstart = () => {
       if (_speakGen !== myGen) return;
-      try { window.EchoFace && window.EchoFace.utteranceStart(chunkNow); } catch(e) {}
+      try { window.EchoFace && window.EchoFace.utteranceStart(chunkNow, { rate: finalRate, voice: picked.voice ? picked.voice.name : "" }); } catch(e) {}
       if (!started) { started = true; onStart?.(); }
     };
     utt.onboundary = (e) => {
       if (_speakGen !== myGen) return;
-      try { window.EchoFace && window.EchoFace.boundary(e.charIndex); } catch(err) {}
+      try { window.EchoFace && window.EchoFace.boundary(e.charIndex, e.name); } catch(err) {}
     };
     utt.onend = () => {
       if (_speakGen !== myGen) return;
@@ -378,7 +378,7 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
 
 // ── 3D FACE (lazy-loaded: Three.js + avatar engine are same-origin, so they cache for offline) ──
 const FACE_KEY = "yoecho_face_prefs";
-const facePrefs = { on: true, avatar: "f1", tone: "1,1,1" };
+const facePrefs = { on: true, avatar: "f1", tone: "1,1,1", lip: 60 };
 try {
   const raw = localStorage.getItem(FACE_KEY);
   if (raw) Object.assign(facePrefs, JSON.parse(raw));
@@ -393,23 +393,57 @@ function faceSupported() {
   }
   return _faceSupported;
 }
+const FACE_URL = { f1: "/avatars/f1.glb", f2: "/avatars/f2.glb" };
+const FACE_RAW = { f1: 2339524, f2: 2197308 };   // unpacked sizes, for the progress percentage
+// Start downloading the avatar immediately, in parallel with the scripts. echo-face.js picks up the same download.
+function startAvatarDownload(key) {
+  const store = (window.__echoBuf = window.__echoBuf || {});
+  if (store[key]) return store[key];
+  const st = { loaded: 0, total: 0, done: false, ms: 0 }, tDl = performance.now();
+  st.promise = (async () => {
+    const r = await fetch(FACE_URL[key] || FACE_URL.f1);
+    if (!r.ok) throw new Error("avatar HTTP " + r.status);
+    st.total = +r.headers.get("content-length") || 0;
+    const parts = [];
+    if (r.body && r.body.getReader) { const rd = r.body.getReader(); for (;;) { const x = await rd.read(); if (x.done) break; parts.push(x.value); st.loaded += x.value.length; } }
+    else { const b = new Uint8Array(await r.arrayBuffer()); parts.push(b); st.loaded = b.length; }
+    let n = 0; parts.forEach(p => n += p.length);
+    const out = new Uint8Array(n); let o = 0; parts.forEach(p => { out.set(p, o); o += p.length; });
+    st.done = true; st.ms = performance.now() - tDl; return out;
+  })();
+  st.promise.catch(() => { if (store[key] === st) delete store[key]; });
+  store[key] = st; return st;
+}
 let _facePromise = null;
 function loadEchoFace() {
   if (_facePromise) return _facePromise;
-  const add = src => new Promise((res, rej) => {
+  startAvatarDownload(facePrefs.avatar);
+  const t0 = performance.now();
+  const files = ["/vendor/three.min.js?v=128", "/vendor/GLTFLoader.js?v=128", "/echo-face.js?v=2"];
+  const ready = () => window.THREE && window.THREE.GLTFLoader && window.EchoFace;
+  // async=false: the three files download in parallel but run in order
+  _facePromise = (ready() ? Promise.resolve() : Promise.all(files.map(src => new Promise((res, rej) => {
     const el = document.createElement("script");
-    el.src = src; el.onload = res; el.onerror = () => rej(new Error("could not load " + src));
+    el.src = src; el.async = false; el.onload = res; el.onerror = () => rej(new Error("could not load " + src));
     document.head.appendChild(el);
-  });
-  const need = [
-    [() => window.THREE, "/vendor/three.min.js?v=128"],
-    [() => window.THREE && window.THREE.GLTFLoader, "/vendor/GLTFLoader.js?v=128"],
-    [() => window.EchoFace, "/echo-face.js?v=1"],
-  ];
-  let p = Promise.resolve();
-  need.forEach(([ok, src]) => { p = p.then(() => ok() ? null : add(src)); });
-  _facePromise = p.catch(e => { _facePromise = null; throw e; });
+  })))).then(() => { window.EchoFace.lipDelay = facePrefs.lip; window.EchoFace.timing.scripts = performance.now() - t0; })
+    .catch(e => { _facePromise = null; throw e; });
   return _facePromise;
+}
+// Called when the chat screen shows the FACE TO FACE button: fetch everything and build the face in the
+// background, so tapping the button shows it straight away. Skipped on data saver / 2G; low-memory phones only download.
+let _faceWarmed = false;
+function preloadEchoFace() {
+  if (_faceWarmed || !facePrefs.on || !faceSupported()) return;
+  const c = navigator.connection;
+  if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return;
+  _faceWarmed = true;
+  loadEchoFace().then(() => {
+    if (navigator.deviceMemory && navigator.deviceMemory < 3) return;
+    (window.requestIdleCallback || (f => setTimeout(f, 300)))(() => {
+      try { window.EchoFace.warm({ avatar: facePrefs.avatar, tone: facePrefs.tone }).catch(() => {}); } catch(e) {}
+    }, { timeout: 4000 });
+  }).catch(() => { _faceWarmed = false; });
 }
 
 // ── SPEECH RECOGNITION ────────────────────────────────────────────────────────
@@ -861,6 +895,7 @@ function Hdr({title,sub,onBack,right,mood}){
 
 function VoiceBar({mood,speaking,listening,voiceOn,onToggle,onVoiceMode,speechSpeed,onSpeedChange,vp,onVoiceChange,panelOpen,onPanelToggle}){
   const m=MOODS[mood];
+  useEffect(()=>{ const id=setTimeout(preloadEchoFace,1500); return()=>clearTimeout(id); },[]);
   const speedLabel=speechSpeed<=0.6?"Slowest":speechSpeed<=0.75?"Slow":speechSpeed<=0.95?"Normal":speechSpeed<=1.2?"Fast":"Fastest";
   return <div style={{borderBottom:"1px solid rgba(196,168,130,.07)",background:"rgba(8,5,2,.7)",flexShrink:0,zIndex:10}}>
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 14px",minHeight:32}}>
@@ -1028,11 +1063,13 @@ function MicPermissionModal({mood,onClose,onRetry}){
 
 const SKIN_TONES = [["1,1,1","#e9cdb8","Original"],["0.8,0.62,0.5","#cf9f80","Tan"],["0.55,0.38,0.28","#8e624a","Brown"],["0.38,0.25,0.18","#664331","Dark brown"]];
 const FACE_AVATARS = [["f1","DARK HAIR"],["f2","BLACK HAIR"]];
+const LIP_TEST = "Hello! I am Echo. Watch my lips as I speak. Peter picked a pepper, and she sells sea shells by the shore.";
 
-// The 3D face. Shows the orb while Three.js and the avatar download, then fades the face in.
+// The 3D face. Shows the orb with a progress percentage while the face loads, then fades the face in.
 function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
   const host=useRef(null), ctl=useRef(null), failRef=useRef(onFail);
   const[ready,setReady]=useState(false);
+  const[pct,setPct]=useState(0);
   const m=MOODS[mood];
   failRef.current=onFail;
   useEffect(()=>{
@@ -1045,6 +1082,17 @@ function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
     }).catch(err=>{ console.warn("YoEcho face unavailable:",err); if(!dead&&failRef.current) failRef.current(); });
     return()=>{ dead=true; if(api) api.unmount(); ctl.current=null; };
   },[]);
+  useEffect(()=>{
+    if(ready) return;
+    const iv=setInterval(()=>{
+      const st=window.__echoBuf&&window.__echoBuf[avatar];
+      if(!st) return;
+      if(st.done){ setPct(100); return; }
+      const exp=st.loaded>st.total?(FACE_RAW[avatar]||0):st.total;   // some hosts report the packed size, the stream is unpacked
+      if(exp) setPct(Math.min(99,Math.round(st.loaded/exp*100)));
+    },200);
+    return()=>clearInterval(iv);
+  },[ready,avatar]);
   useEffect(()=>{ctl.current&&ctl.current.setMood(mood,MC[mood]);},[mood]);
   useEffect(()=>{ctl.current&&ctl.current.setListening(listening);},[listening]);
   useEffect(()=>{ctl.current&&ctl.current.setThinking(thinking);},[thinking]);
@@ -1054,6 +1102,7 @@ function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
     if(c&&ready&&c.avatarKey!==avatar) c.setAvatar(avatar).catch(()=>{});
   },[avatar,ready]);
   const soft=a=>m.glow.replace(/[\d.]+\)$/,a+")");
+  const label=pct>=100?"ALMOST READY…":pct>0?"LOADING "+pct+"%":"WAKING UP…";
   return <div style={{position:"relative",height:"min(34vh,300px)",width:"min(27.2vh,240px)",borderRadius:28,overflow:"hidden",
       background:`radial-gradient(ellipse at 50% 38%,${soft(".24")},rgba(12,9,5,.92) 74%)`,
       border:`1px solid ${m.acc}${speaking?"77":"33"}`,
@@ -1061,7 +1110,7 @@ function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
     <div ref={host} style={{position:"absolute",inset:0,opacity:ready?1:0,transition:"opacity .7s"}}/>
     {!ready&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
       <Orb size={96} mood={mood} tick={tick} speaking={speaking} listening={listening}/>
-      <div style={{fontSize:8,letterSpacing:".2em",color:m.acc,opacity:.45,fontFamily:SS}}>WAKING UP…</div>
+      <div style={{fontSize:8,letterSpacing:".2em",color:m.acc,opacity:.55,fontFamily:SS}}>{label}</div>
     </div>}
   </div>;
 }
@@ -1074,6 +1123,7 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
   const[look,setLook]=useState(false);
   const[avatar,setAvatar]=useState(facePrefs.avatar);
   const[tone,setTone]=useState(facePrefs.tone);
+  const[lip,setLip]=useState(facePrefs.lip);
   const[thinking,setThinking]=useState(false);
   const prevL=useRef(false);
   useEffect(()=>{ const iv=setInterval(()=>setT(x=>x+1),180); return()=>clearInterval(iv); },[]);
@@ -1087,11 +1137,18 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
   };
   const pickAvatar=k=>{ setAvatar(k); facePrefs.avatar=k; saveFacePrefs(); };
   const pickTone=v=>{ setTone(v); facePrefs.tone=v; saveFacePrefs(); };
+  const pickLip=v=>{ setLip(v); facePrefs.lip=v; saveFacePrefs(); if(window.EchoFace) window.EchoFace.lipDelay=v; };
+  const testLips=()=>speakText(LIP_TEST,mood,null,null,speechSpeed);
   const failFace=()=>{ setFaceOn(false); setNote("Face couldn't load, showing the orb. It needs a connection the first time."); };
   const speedLabel=speechSpeed<=0.6?"Slowest":speechSpeed<=0.75?"Slow":speechSpeed<=0.95?"Normal":speechSpeed<=1.2?"Fast":"Fastest";
   const chip=on=>({fontSize:8,letterSpacing:".14em",fontFamily:SS,padding:"6px 12px",borderRadius:99,cursor:"pointer",
     background:on?`${m.acc}26`:"rgba(196,168,130,.06)",border:`1px solid ${on?m.acc+"66":"rgba(196,168,130,.18)"}`,color:on?m.acc:"rgba(196,168,130,.55)"});
   const showWave=faceOn?listening:(speaking||listening);
+  const EF=window.EchoFace, sec=x=>x?(x/1000).toFixed(1)+"s":"-";
+  const syncInfo=!EF?"":(EF.stats.mode==="words"?"LIPS LOCKED TO EACH WORD":EF.stats.mode==="estimated"?"THIS VOICE GIVES NO WORD TIMING · LIPS ARE ESTIMATED":"PLAY THE TEST TO CHECK LIP SYNC");
+  const dl=window.__echoBuf&&window.__echoBuf[avatar];
+  const loadInfo=EF&&EF.timing&&EF.timing.parse?`LOADED · FILES ${sec(EF.timing.scripts)} · MODEL ${sec(dl&&dl.ms)} · BUILD ${sec(EF.timing.parse)}`:"";
+  const dim={fontSize:7,letterSpacing:".12em",color:"rgba(196,168,130,.4)",fontFamily:SS,textAlign:"center",lineHeight:1.7,maxWidth:250};
   return <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",overflowY:"auto",background:"rgba(0,0,0,.88)",backdropFilter:"blur(20px)"}}>
    <div style={{margin:"auto",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"18px 0",width:"100%"}}>
     <div style={{fontSize:8,color:m.acc,letterSpacing:".22em",fontFamily:SS,marginBottom:faceOn?14:28,opacity:.45}}>{faceOn?"FACE TO FACE":"VOICE MODE"}</div>
@@ -1109,6 +1166,14 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
         {SKIN_TONES.map(([v,col,lab])=><button key={v} onClick={()=>pickTone(v)} title={lab} aria-label={lab}
           style={{width:24,height:24,borderRadius:"50%",background:col,cursor:"pointer",padding:0,border:tone===v?`2px solid ${m.acc}`:"2px solid rgba(196,168,130,.2)",boxShadow:tone===v?`0 0 10px ${m.glow}`:"none"}}/>)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:230,marginTop:4}}>
+        <div style={dim}>LIP SYNC · {lip>0?"+":""}{lip} ms</div>
+        <input type="range" min="-150" max="400" step="10" value={lip} onChange={e=>pickLip(parseInt(e.target.value,10))} style={{width:"100%",accentColor:m.acc,cursor:"pointer",height:3}}/>
+        <div style={dim}>LIPS MOVE BEFORE THE VOICE? SLIDE RIGHT. AFTER IT? SLIDE LEFT.</div>
+        <button onClick={testLips} style={chip(false)}>▶ TEST LIPS</button>
+        {syncInfo&&<div style={dim}>{syncInfo}</div>}
+        {loadInfo&&<div style={{...dim,opacity:.6}}>{loadInfo}</div>}
       </div>
     </div>}
     {note&&<div style={{marginTop:10,fontSize:9,color:"rgba(235,228,216,.45)",fontFamily:SF,fontStyle:"italic",maxWidth:240,textAlign:"center",lineHeight:1.6}}>{note}</div>}

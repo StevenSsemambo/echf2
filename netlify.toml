@@ -20,9 +20,13 @@
     Permissions-Policy = "microphone=(self)"
 
 # 3D face files: big, rarely change, so let browsers keep them for a week
+# The avatar files are stored gzip-compressed (0.8 MB instead of 2.3 MB). This header makes the browser
+# unpack them itself; echo-face.js also unpacks them if a host ever drops the header.
 [[headers]]
   for = "/avatars/*"
   [headers.values]
+    Content-Encoding = "gzip"
+    Content-Type = "model/gltf-binary"
     Cache-Control = "public, max-age=604800"
 
 [[headers]]
