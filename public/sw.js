@@ -1,8 +1,8 @@
 // ── YoEcho Service Worker ─────────────────────────────────────────────────────
-// v7 — bumped for the faster, gzip-packed 3D face. The face files (/echo-face.js, /vendor/*, /avatars/*) are
+// v8 — bumped for the body-language update (gestures, hands, expressions). The face files (/echo-face.js, /vendor/*, /avatars/*) are
 // downloaded the first time someone opens Face to face, then cached by the cache-first rule
 // below so the face keeps working offline. They are not precached, to save mobile data.
-const CACHE_NAME = "yoecho-pwa-v7";
+const CACHE_NAME = "yoecho-pwa-v8";
 
 const PRECACHE_ASSETS = [
   "/",

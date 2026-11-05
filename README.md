@@ -167,6 +167,14 @@ public/
   events fall back to estimated timing, and the speed is learned per voice. Open `✦ LOOK` to
   slide the lip delay (lips before the voice → slide right) and press `▶ TEST LIPS`; the panel also shows
   whether the current voice is word-locked or estimated.
+- **Body language.** What Echo says decides how it moves. A lexicon turns words into cues (greeting,
+  emphasis, negation, size, uncertainty, thanks/sorry, counting, calm…) and each cue becomes an arm
+  gesture, facial expression, head move or glance scheduled on the word-locked timeline, so the stroke
+  lands on the word. Arms are placed by two-bone IK, hands have real finger shapes and palm
+  orientation, and a collision guard measured on the avatar's actual mesh keeps hands out of each other,
+  the torso and the face. To add a gesture, add an entry to `GEST` in `echo-face.js` (wrist position and palm
+  direction); to teach it a word, add the word to a cue with `addCue(...)`.
+- **Framing.** `✦ LOOK` → `WITH HANDS` (default, shows face and hands) or `CLOSE-UP`.
 - **Speed.** The face files start downloading while the chat is open, the face is built in the
   background, and it stays warm when you close voice mode, so opening it is near-instant.
 - **Adding a new avatar.** It needs a standard humanoid skeleton (Hips, Spine, Neck, Head, arms)

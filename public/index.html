@@ -378,7 +378,7 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
 
 // ── 3D FACE (lazy-loaded: Three.js + avatar engine are same-origin, so they cache for offline) ──
 const FACE_KEY = "yoecho_face_prefs";
-const facePrefs = { on: true, avatar: "f1", tone: "1,1,1", lip: 60 };
+const facePrefs = { on: true, avatar: "f1", tone: "1,1,1", lip: 60, frame: "torso" };
 try {
   const raw = localStorage.getItem(FACE_KEY);
   if (raw) Object.assign(facePrefs, JSON.parse(raw));
@@ -419,7 +419,7 @@ function loadEchoFace() {
   if (_facePromise) return _facePromise;
   startAvatarDownload(facePrefs.avatar);
   const t0 = performance.now();
-  const files = ["/vendor/three.min.js?v=128", "/vendor/GLTFLoader.js?v=128", "/echo-face.js?v=2"];
+  const files = ["/vendor/three.min.js?v=128", "/vendor/GLTFLoader.js?v=128", "/echo-face.js?v=3"];
   const ready = () => window.THREE && window.THREE.GLTFLoader && window.EchoFace;
   // async=false: the three files download in parallel but run in order
   _facePromise = (ready() ? Promise.resolve() : Promise.all(files.map(src => new Promise((res, rej) => {
@@ -1066,7 +1066,7 @@ const FACE_AVATARS = [["f1","DARK HAIR"],["f2","BLACK HAIR"]];
 const LIP_TEST = "Hello! I am Echo. Watch my lips as I speak. Peter picked a pepper, and she sells sea shells by the shore.";
 
 // The 3D face. Shows the orb with a progress percentage while the face loads, then fades the face in.
-function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
+function FaceStage({mood,listening,speaking,thinking,avatar,tone,frame,tick,onFail}){
   const host=useRef(null), ctl=useRef(null), failRef=useRef(onFail);
   const[ready,setReady]=useState(false);
   const[pct,setPct]=useState(0);
@@ -1076,7 +1076,7 @@ function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
     let dead=false, api=null;
     loadEchoFace().then(()=>{
       if(dead||!host.current) return;
-      api=window.EchoFace.mount(host.current,{avatar,tone,mood,moodColor:MC[mood],onFail:()=>failRef.current&&failRef.current()});
+      api=window.EchoFace.mount(host.current,{avatar,tone,frame,mood,moodColor:MC[mood],onFail:()=>failRef.current&&failRef.current()});
       ctl.current=api;
       return api.ready.then(()=>{ if(!dead) setReady(true); });
     }).catch(err=>{ console.warn("YoEcho face unavailable:",err); if(!dead&&failRef.current) failRef.current(); });
@@ -1097,13 +1097,14 @@ function FaceStage({mood,listening,speaking,thinking,avatar,tone,tick,onFail}){
   useEffect(()=>{ctl.current&&ctl.current.setListening(listening);},[listening]);
   useEffect(()=>{ctl.current&&ctl.current.setThinking(thinking);},[thinking]);
   useEffect(()=>{ctl.current&&ctl.current.setTone(tone);},[tone]);
+  useEffect(()=>{ctl.current&&ctl.current.setFrame(frame);},[frame]);
   useEffect(()=>{
     const c=ctl.current;
     if(c&&ready&&c.avatarKey!==avatar) c.setAvatar(avatar).catch(()=>{});
   },[avatar,ready]);
   const soft=a=>m.glow.replace(/[\d.]+\)$/,a+")");
   const label=pct>=100?"ALMOST READY…":pct>0?"LOADING "+pct+"%":"WAKING UP…";
-  return <div style={{position:"relative",height:"min(34vh,300px)",width:"min(27.2vh,240px)",borderRadius:28,overflow:"hidden",
+  return <div style={{position:"relative",height:"min(38vh,330px)",width:"min(36.5vh,314px)",borderRadius:28,overflow:"hidden",
       background:`radial-gradient(ellipse at 50% 38%,${soft(".24")},rgba(12,9,5,.92) 74%)`,
       border:`1px solid ${m.acc}${speaking?"77":"33"}`,
       boxShadow:speaking?`0 0 46px ${m.glow}`:`0 0 24px ${soft(".16")}`,transition:"box-shadow .4s,border-color .4s"}}>
@@ -1124,6 +1125,7 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
   const[avatar,setAvatar]=useState(facePrefs.avatar);
   const[tone,setTone]=useState(facePrefs.tone);
   const[lip,setLip]=useState(facePrefs.lip);
+  const[frame,setFrame]=useState(facePrefs.frame);
   const[thinking,setThinking]=useState(false);
   const prevL=useRef(false);
   useEffect(()=>{ const iv=setInterval(()=>setT(x=>x+1),180); return()=>clearInterval(iv); },[]);
@@ -1137,6 +1139,7 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
   };
   const pickAvatar=k=>{ setAvatar(k); facePrefs.avatar=k; saveFacePrefs(); };
   const pickTone=v=>{ setTone(v); facePrefs.tone=v; saveFacePrefs(); };
+  const pickFrame=v=>{ setFrame(v); facePrefs.frame=v; saveFacePrefs(); };
   const pickLip=v=>{ setLip(v); facePrefs.lip=v; saveFacePrefs(); if(window.EchoFace) window.EchoFace.lipDelay=v; };
   const testLips=()=>speakText(LIP_TEST,mood,null,null,speechSpeed);
   const failFace=()=>{ setFaceOn(false); setNote("Face couldn't load, showing the orb. It needs a connection the first time."); };
@@ -1153,7 +1156,7 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
    <div style={{margin:"auto",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"18px 0",width:"100%"}}>
     <div style={{fontSize:8,color:m.acc,letterSpacing:".22em",fontFamily:SS,marginBottom:faceOn?14:28,opacity:.45}}>{faceOn?"FACE TO FACE":"VOICE MODE"}</div>
     {faceOn
-      ?<FaceStage mood={mood} listening={listening} speaking={speaking} thinking={thinking} avatar={avatar} tone={tone} tick={t} onFail={failFace}/>
+      ?<FaceStage mood={mood} listening={listening} speaking={speaking} thinking={thinking} avatar={avatar} tone={tone} frame={frame} tick={t} onFail={failFace}/>
       :<Orb size={160} mood={mood} tick={t} speaking={speaking} listening={listening}/>}
     <div style={{display:"flex",gap:8,marginTop:14,alignItems:"center"}}>
       <button onClick={toggleFace} style={chip(false)}>{faceOn?"○ ORB":"◉ FACE"}</button>
@@ -1162,6 +1165,9 @@ function VoiceModeOverlay({mood,listening,speaking,transcript,onClose,onMicToggl
     {faceOn&&look&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginTop:10}}>
       <div style={{display:"flex",gap:8}}>
         {FACE_AVATARS.map(([k,lab])=><button key={k} onClick={()=>pickAvatar(k)} style={chip(avatar===k)}>{lab}</button>)}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        {[["torso","WITH HANDS"],["face","CLOSE-UP"]].map(([k,lab])=><button key={k} onClick={()=>pickFrame(k)} style={chip(frame===k)}>{lab}</button>)}
       </div>
       <div style={{display:"flex",gap:12,alignItems:"center"}}>
         {SKIN_TONES.map(([v,col,lab])=><button key={v} onClick={()=>pickTone(v)} title={lab} aria-label={lab}
