@@ -181,3 +181,13 @@ public/
   and ARKit + Oculus viseme blendshapes (Ready Player Me avatars work). Pack it with `gzip -9 -n -c my.glb > public/avatars/my.glb`, put it in
   `public/avatars/` and add it to `AVATARS` in `echo-face.js` and `FACE_AVATARS` in `index.html`.
   Draco/meshopt/KTX2-compressed files are not supported by the bundled loader.
+
+## Music (YoEcho plays you music)
+
+`public/echo-music.js` is a self-contained generative music engine (Web Audio, no samples, no network). Echo decides *what* to play by ending a reply with a `MUSIC:{...}` tag (mood, intent `match|lift|calm`, optional style/energy); the engine composes an endless, non-repeating piece for it on the device.
+
+- Lazy-loaded from `index.html` after the app is idle (skipped on data saver / 2G).
+- Ask in chat ("play me something calm", "another one", "more energy", "stop the music") or open **Music** from the menu / the ♫ button.
+- The music ducks while Echo speaks and goes silent while the mic is listening.
+- Chat music cards are not saved with the chat history (the music itself is regenerable from a seed).
+- Console API for tuning: `EchoMusic.play({mood:"joy",style:"afrobeats"})`, `EchoMusic.exportWav(brief, seconds)`.

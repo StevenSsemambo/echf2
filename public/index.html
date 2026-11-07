@@ -494,7 +494,7 @@ function friendlyErrorMsg(err){
 
 // Build a smart message window: summarise old exchanges into a digest, keep recent ones verbatim
 function buildMessageWindow(messages) {
-  const mapped = messages.map(m => ({ role: m.role === "echo" ? "assistant" : "user", content: m.content }));
+  const mapped = messages.map(m => ({ role: m.role === "echo" ? "assistant" : "user", content: m.content + (m.music && m.music.info ? `\n[music now playing: "${m.music.info.title}" — ${m.music.info.mood}, ${m.music.info.styleName}]` : m.music && m.music.stopped ? "\n[music stopped]" : "") }));
   if (mapped.length <= 20) return mapped;
   // Summarise everything before the last 20 messages into a single context block
   const old = mapped.slice(0, mapped.length - 20);
@@ -635,6 +635,217 @@ function extractAnchor(raw, userMsg) {
 }
 function stripAnchor(t) { return t.replace(/\nANCHOR:\{[\s\S]*?\}\n?/m, "").trim(); }
 
+// ── MUSIC (generative, mood-driven; engine lives in /echo-music.js) ───────────
+let _musicPromise=null;
+function loadEchoMusic(){
+  if(window.EchoMusic) return Promise.resolve(window.EchoMusic);
+  if(_musicPromise) return _musicPromise;
+  _musicPromise=new Promise((res,rej)=>{
+    const el=document.createElement("script");
+    el.src="/echo-music.js?v=1"; el.async=true;
+    el.onload=()=>{ if(window.EchoMusic){ window.dispatchEvent(new Event("echomusic-ready")); res(window.EchoMusic); } else rej(new Error("music engine missing")); };
+    el.onerror=()=>rej(new Error("could not load the music engine"));
+    document.head.appendChild(el);
+  }).catch(e=>{ _musicPromise=null; throw e; });
+  return _musicPromise;
+}
+const MUSIC_STYLES=[["afrobeats","Afrobeats"],["amapiano","Amapiano"],["lofi","Lo-fi"],["house","House"],["trap","Trap"],["rnb","R&B"],["ambient","Ambient"],["cinematic","Cinematic"],["acoustic","Acoustic"]];
+const MUSIC_MOODS=["joy","hope","love","neutral","sadness","fear","anger","confusion"];
+function extractMusic(raw){
+  const m=String(raw||"").match(/MUSIC:(\{[^\n]*\})/); if(!m) return null;
+  try{ return JSON.parse(m[1]); }catch(e){ try{ return JSON.parse(m[1].slice(0,m[1].lastIndexOf("}")+1)); }catch(e2){ return null; } }
+}
+function stripMusic(t){ return String(t||"").replace(/\n?MUSIC:\{[^\n]*\}[ \t]*/g,"").trim(); }
+// Safety net: if the model forgot the MUSIC tag but the person clearly asked, act on the request anyway.
+function sniffMusic(text){
+  const t=String(text||"").toLowerCase();
+  if(/\b(stop|turn off|switch off|pause|shut)\b[^.!?]{0,20}\b(music|song|beat|playing|it)\b|\bno more (music|songs?)\b/.test(t)) return {cmd:"stop"};
+  if(/\b(next|another|different|skip|change)\b[^.!?]{0,15}\b(song|track|music|one|beat|vibe)\b/.test(t)&&!/\b(my|the) (day|mind|life)\b/.test(t)) return {cmd:"next"};
+  if(/\b(louder|more energy|faster|speed it up|pick it up)\b/.test(t)) return {cmd:"steer",energy:.3,bpm:8};
+  if(/\b(softer|calmer|slow it down|slower|less energy|quieter)\b/.test(t)&&/\b(music|it|beat|song)\b/.test(t)) return {cmd:"steer",energy:-.3,bpm:-8};
+  if(/\b(play|put on|start|make|compose|give me|i (want|need|wanna|would like)|can you play)\b[^.!?]{0,40}\b(music|song|beat|tune|something to (listen|vibe|relax|dance))\b|\bmusic (please|for me)\b|\bplay (me )?something\b/.test(t)){
+    const c={mood:null};
+    for(const [id,nm] of MUSIC_STYLES){ if(t.includes(nm.toLowerCase())||t.includes(id)||(id==="lofi"&&/\b(chill|study)\b/.test(t))){ c.style=id; break; } }
+    if(/\b(calm|relax|sleep|unwind|settle)\b/.test(t)) c.intent="calm";
+    else if(/\b(cheer|lift|pick me up|happy)\b/.test(t)) c.intent="lift";
+    return c;
+  }
+  return null;
+}
+function musicTaste(){
+  try{ const M=window.EchoMusic; const s=M&&M.tasteSummary?M.tasteSummary():""; return s?"Their music taste so far: "+s+".":""; }catch(e){ return ""; }
+}
+// Runs a music command. Returns a small descriptor that the chat shows as a card.
+async function runMusic(cmd,curMood){
+  const M=await loadEchoMusic();
+  if(!M.supported()) return {error:"This browser can't play generated music."};
+  try{ M.unlock(); }catch(e){}
+  const c=(cmd&&cmd.cmd)||"play";
+  if(c==="stop"||cmd.stop){ M.stop(); return {stopped:true}; }
+  if(c==="next"){ const i=M.next(); return i?{info:i,brief:M.current()}:{error:"Nothing to skip yet — tell me what you'd like to hear."}; }
+  if(c==="steer"){ M.steer({energy:Number(cmd.energy)||0,bpm:Number(cmd.bpm)||0}); return {steered:true}; }
+  const mood=MUSIC_MOODS.includes(cmd.mood)?cmd.mood:(curMood||"neutral");
+  const i=M.play({mood,intent:cmd.intent,style:cmd.style,energy:typeof cmd.energy==="number"?cmd.energy:undefined});
+  return i?{info:i,brief:M.current(),note:cmd.note||""}:{error:"I couldn't start the music."};
+}
+function useMusicInfo(){
+  const[,f]=useState(0);
+  useEffect(()=>{
+    let off=null;
+    const hook=()=>{ const M=window.EchoMusic; if(M&&!off) off=M.on(()=>f(x=>x+1)); };
+    hook(); window.addEventListener("echomusic-ready",hook);
+    return()=>{ window.removeEventListener("echomusic-ready",hook); if(off) off(); };
+  },[]);
+  return window.EchoMusic?window.EchoMusic.info():{active:false};
+}
+// Bars that move with the real audio level
+function MusicViz({color,n=5,h=18,w=3}){
+  const refs=useRef([]);
+  useEffect(()=>{
+    let raf=0;
+    const loop=t=>{
+      const M=window.EchoMusic, lv=M?M.level():0;
+      refs.current.forEach((el,i)=>{ if(el) el.style.transform="scaleY("+(.16+Math.min(1,lv*1.1)*(.5+.5*Math.sin(t/190+i*1.4)))+")"; });
+      raf=requestAnimationFrame(loop);
+    };
+    raf=requestAnimationFrame(loop);
+    return()=>cancelAnimationFrame(raf);
+  },[]);
+  return <div style={{display:"flex",alignItems:"center",gap:2,height:h}}>
+    {Array.from({length:n}).map((_,i)=><div key={i} ref={el=>refs.current[i]=el} style={{width:w,height:h,borderRadius:w,background:color,transformOrigin:"center",transform:"scaleY(.2)"}}/>)}
+  </div>;
+}
+function downloadWav(M,setBusy){
+  setBusy(true);
+  const b=M.current()||{mood:"neutral"};
+  M.exportWav(b,60).then(blob=>{
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="yoecho-"+(M.info().title||"piece").toLowerCase().replace(/[^a-z0-9]+/g,"-")+".wav";
+    document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
+  }).catch(()=>{}).finally(()=>setBusy(false));
+}
+const mbtn={background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.22)",borderRadius:14,padding:"7px 12px",color:"#c4a882",fontSize:10,letterSpacing:".08em",cursor:"pointer",fontFamily:SS,minHeight:34};
+
+// The card inside a chat bubble
+function MusicCard({music,mood}){
+  const live=useMusicInfo(), M=window.EchoMusic, m=MOODS[mood]||MOODS.neutral;
+  if(music.error) return <div style={{marginTop:8,marginLeft:24,fontSize:11,color:"rgba(235,228,216,.5)",fontFamily:SS}}>♫ {music.error}</div>;
+  if(music.stopped) return <div style={{marginTop:8,marginLeft:24,fontSize:9,letterSpacing:".12em",color:m.acc,opacity:.5,fontFamily:SS}}>■ MUSIC STOPPED</div>;
+  if(music.steered) return <div style={{marginTop:8,marginLeft:24,fontSize:9,letterSpacing:".12em",color:m.acc,opacity:.5,fontFamily:SS}}>♫ ADJUSTED LIVE</div>;
+  const i=music.info||{}, isLive=live.active&&live.seed===i.seed, playing=isLive&&live.playing;
+  const toggle=()=>{ if(!M) return; try{M.unlock();}catch(e){} if(isLive) M.toggle(); else if(music.brief) M.play(music.brief); };
+  return <div style={{marginTop:10,marginLeft:24,maxWidth:"88%",padding:"12px 14px",borderRadius:16,background:`linear-gradient(135deg,${m.acc}1c,rgba(196,168,130,.05))`,border:`1px solid ${m.acc}40`,boxShadow:playing?`0 0 22px ${m.glow}`:"none",transition:"box-shadow .6s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <button onClick={toggle} aria-label={playing?"Pause":"Play"} style={{width:40,height:40,borderRadius:"50%",border:"none",cursor:"pointer",background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,color:"#0c0905",fontSize:15,flexShrink:0}}>{playing?"❚❚":"▶"}</button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:15,color:"rgba(235,228,216,.92)",fontFamily:SF,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{i.title||"Untitled"}</div>
+        <div style={{fontSize:9,letterSpacing:".1em",color:m.acc,opacity:.6,fontFamily:SS,marginTop:3}}>{(i.mood||"").toUpperCase()} · {(i.styleName||"").toUpperCase()} · {i.bpm} BPM · {(i.key||"").toUpperCase()}</div>
+      </div>
+      {playing&&<MusicViz color={m.acc}/>}
+    </div>
+    {isLive&&<div style={{display:"flex",gap:8,marginTop:10}}>
+      <button onClick={()=>M.next()} style={mbtn}>⏭ NEW ONE</button>
+      <button onClick={()=>M.like()} style={mbtn}>♡ LIKE</button>
+    </div>}
+  </div>;
+}
+
+// Floating mini player + expandable controls, visible whenever music is playing
+function MusicControls({M,info,acc}){
+  const[busy,setBusy]=useState(false);
+  const[vol,setVol]=useState(info.volume!=null?info.volume:.7);
+  return <div>
+    <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+      <button style={mbtn} onClick={()=>M.toggle()}>{info.playing?"❚❚ PAUSE":"▶ PLAY"}</button>
+      <button style={mbtn} onClick={()=>M.next()}>⏭ NEW</button>
+      <button style={mbtn} onClick={()=>M.like()}>♡ LIKE</button>
+      <button style={mbtn} onClick={()=>M.steer({energy:-.2,bpm:-6})}>− ENERGY</button>
+      <button style={mbtn} onClick={()=>M.steer({energy:.2,bpm:6})}>+ ENERGY</button>
+      <button style={{...mbtn,opacity:busy?.5:1}} disabled={busy} onClick={()=>downloadWav(M,setBusy)}>{busy?"RENDERING…":"⤓ SAVE 1 MIN"}</button>
+    </div>
+    <div style={{fontSize:8,letterSpacing:".14em",color:acc,opacity:.5,fontFamily:SS,marginBottom:6}}>CHANGE THE FEEL</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+      {MUSIC_MOODS.map(k=><button key={k} onClick={()=>M.steer({mood:k})} style={{...mbtn,padding:"5px 10px",fontSize:9,borderColor:info.mood===k?acc:"rgba(196,168,130,.22)"}}>{k.toUpperCase()}</button>)}
+    </div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+      {MUSIC_STYLES.map(([id,nm])=><button key={id} onClick={()=>M.steer({style:id})} style={{...mbtn,padding:"5px 10px",fontSize:9,borderColor:info.style===id?acc:"rgba(196,168,130,.22)"}}>{nm.toUpperCase()}</button>)}
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <span style={{fontSize:8,letterSpacing:".14em",color:acc,opacity:.5,fontFamily:SS}}>VOLUME</span>
+      <input type="range" min="0" max="1" step=".02" value={vol} onChange={e=>{const v=+e.target.value;setVol(v);M.setVolume(v);}} style={{flex:1,accentColor:acc}}/>
+    </div>
+  </div>;
+}
+function MusicDock(){
+  const info=useMusicInfo(), M=window.EchoMusic;
+  const[open,setOpen]=useState(false);
+  const[scr,setScr]=useState("");
+  useEffect(()=>{ const f=e=>setScr(e.detail); window.addEventListener("echoscreen",f); return()=>window.removeEventListener("echoscreen",f); },[]);
+  if(!M||!info.active||scr==="music"||scr==="login"||scr==="tour") return null;
+  const acc=(MOODS[info.mood]||MOODS.neutral).acc;
+  return <div style={{position:"fixed",top:"calc(env(safe-area-inset-top,0px) + 58px)",right:10,zIndex:150,fontFamily:SF}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px 6px 12px",borderRadius:22,background:"rgba(10,7,4,.88)",backdropFilter:"blur(14px)",border:`1px solid ${acc}55`,cursor:"pointer",maxWidth:210,boxShadow:`0 4px 18px rgba(0,0,0,.45)`}}>
+      {info.playing?<MusicViz color={acc} n={4} h={14} w={2.5}/>:<span style={{fontSize:11,color:acc}}>♫</span>}
+      <span style={{fontSize:11,color:"rgba(235,228,216,.85)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:110}}>{info.title}</span>
+      <button onClick={e=>{e.stopPropagation();M.toggle();}} aria-label="Play or pause" style={{width:26,height:26,borderRadius:"50%",border:"none",background:acc,color:"#0c0905",fontSize:10,cursor:"pointer",flexShrink:0}}>{info.playing?"❚❚":"▶"}</button>
+      <button onClick={e=>{e.stopPropagation();M.stop();setOpen(false);}} aria-label="Stop music" style={{background:"transparent",border:"none",color:acc,opacity:.6,fontSize:12,cursor:"pointer",padding:"0 2px"}}>✕</button>
+    </div>
+    {open&&<div style={{marginTop:8,width:"min(92vw,340px)",marginLeft:"auto",padding:14,borderRadius:18,background:"rgba(10,7,4,.95)",backdropFilter:"blur(18px)",border:`1px solid ${acc}33`}}>
+      <div style={{fontSize:9,letterSpacing:".1em",color:acc,opacity:.6,fontFamily:SS,marginBottom:10}}>{(info.mood||"").toUpperCase()} · {(info.styleName||"").toUpperCase()} · {info.bpm} BPM · {(info.key||"").toUpperCase()}</div>
+      <MusicControls M={M} info={info} acc={acc}/>
+    </div>}
+  </div>;
+}
+
+// Full music screen: pick a mood and style yourself, or let Echo choose
+function MusicScreen({mood,tick,speaking,onBack}){
+  const info=useMusicInfo(), M=window.EchoMusic, m=MOODS[mood]||MOODS.neutral;
+  const[pm,setPm]=useState(mood==="neutral"?"hope":mood);
+  const[ps,setPs]=useState("");
+  const[pi,setPi]=useState("");
+  const[err,setErr]=useState("");
+  const[,bump]=useState(0);
+  useEffect(()=>{ loadEchoMusic().then(()=>bump(x=>x+1)).catch(e=>setErr(e.message)); },[]);
+  const start=()=>{ setErr(""); runMusic({mood:pm,style:ps||undefined,intent:pi||undefined},pm).then(r=>{ if(r&&r.error) setErr(r.error); }).catch(e=>setErr(e.message)); };
+  const saved=M&&M.saved?M.saved():[];
+  const chip=(on)=>({...mbtn,padding:"7px 12px",borderColor:on?m.acc:"rgba(196,168,130,.22)",background:on?`${m.acc}26`:"rgba(196,168,130,.06)"});
+  return <div style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",fontFamily:SF}}>
+    <style>{CSS}</style><Bg mood={mood}/>
+    <Hdr title="MUSIC" sub="composed live · never the same twice" onBack={onBack} mood={mood} right={<Orb size={26} mood={mood} tick={tick} speaking={speaking}/>}/>
+    <div style={{flex:1,overflowY:"auto",padding:"16px 14px 40px",maxWidth:600,margin:"0 auto",width:"100%",position:"relative",zIndex:5}}>
+      {info.active&&<div style={{padding:16,borderRadius:20,marginBottom:18,background:`linear-gradient(135deg,${m.acc}22,rgba(196,168,130,.05))`,border:`1px solid ${m.acc}44`}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{fontSize:20,color:"rgba(235,228,216,.95)"}}>{info.title}</div>
+          {info.playing&&<MusicViz color={m.acc} n={6} h={22} w={3}/>}
+        </div>
+        <div style={{fontSize:9,letterSpacing:".1em",color:m.acc,opacity:.6,fontFamily:SS,marginBottom:12}}>{(info.mood||"").toUpperCase()} · {(info.styleName||"").toUpperCase()} · {info.bpm} BPM · {(info.key||"").toUpperCase()} · {(info.section||"").toUpperCase()}</div>
+        <MusicControls M={M} info={info} acc={m.acc}/>
+        <button style={{...mbtn,marginTop:12}} onClick={()=>M.stop()}>■ STOP</button>
+      </div>}
+      <div style={{fontSize:8,letterSpacing:".14em",color:m.acc,opacity:.55,fontFamily:SS,marginBottom:8}}>HOW ARE YOU FEELING?</div>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:16}}>
+        {MUSIC_MOODS.map(k=><button key={k} onClick={()=>setPm(k)} style={chip(pm===k)}>{k.toUpperCase()}</button>)}
+      </div>
+      <div style={{fontSize:8,letterSpacing:".14em",color:m.acc,opacity:.55,fontFamily:SS,marginBottom:8}}>WHAT SHOULD THE MUSIC DO?</div>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:16}}>
+        {[["","LET ECHO DECIDE"],["match","MATCH ME"],["lift","LIFT ME"],["calm","CALM ME"]].map(([k,l])=><button key={k||"auto"} onClick={()=>setPi(k)} style={chip(pi===k)}>{l}</button>)}
+      </div>
+      <div style={{fontSize:8,letterSpacing:".14em",color:m.acc,opacity:.55,fontFamily:SS,marginBottom:8}}>STYLE</div>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:20}}>
+        <button onClick={()=>setPs("")} style={chip(ps==="")}>SURPRISE ME</button>
+        {MUSIC_STYLES.map(([id,nm])=><button key={id} onClick={()=>setPs(id)} style={chip(ps===id)}>{nm.toUpperCase()}</button>)}
+      </div>
+      <button onClick={start} style={{width:"100%",padding:"15px",borderRadius:26,border:"none",cursor:"pointer",background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,color:"#0c0905",fontSize:12,letterSpacing:".16em",fontFamily:SS,fontWeight:700}}>{info.active?"COMPOSE SOMETHING NEW":"▶ COMPOSE FOR ME"}</button>
+      {err&&<div style={{marginTop:10,fontSize:12,color:"rgba(235,228,216,.55)",fontFamily:SS}}>{err}</div>}
+      {saved.length>0&&<div style={{marginTop:26}}>
+        <div style={{fontSize:8,letterSpacing:".14em",color:m.acc,opacity:.55,fontFamily:SS,marginBottom:8}}>PIECES YOU LIKED</div>
+        {saved.slice(0,12).map((s,k)=><button key={s.s} onClick={()=>{try{M.unlock();}catch(e){} M.playSaved(k);}} style={{display:"block",width:"100%",textAlign:"left",padding:"11px 14px",marginBottom:7,borderRadius:14,background:"rgba(196,168,130,.07)",border:"1px solid rgba(196,168,130,.15)",color:"rgba(235,228,216,.85)",fontSize:14,fontFamily:SF,cursor:"pointer"}}>♫ {s.t}</button>)}
+      </div>}
+      <p style={{marginTop:24,fontSize:11,lineHeight:1.8,color:"rgba(196,168,130,.4)",fontFamily:SS}}>Every piece is composed on your device, from a fresh seed, so it won't repeat. You can also just ask Echo in chat — "play me something to calm down".</p>
+    </div>
+  </div>;
+}
+
 const buildSys = (p, arc="", anchors=[], relationships={})=>`You are YoEcho — an AI companion built by Steven Sema at SayMyTech Developers, Kampala Uganda. Mind: a large language model (never claim to be Claude, Gemini, GPT or any named model — you are YoEcho). Soul: YoEcho.
 Creator knowledge: Steven Sema — creator of YoEcho. Full name: Steven Sema. Studied Computer Science at Makerere University, Kampala, Uganda. Founder of SayMyTech Developers, a Kampala-based tech company that builds AI-powered apps. SayMyTech's portfolio includes: SayMyDoc and SayMyDoc Pro (AI-powered health apps), YoMenta (AI education app), YoSpeech (AI speech therapy app for people who stutter), YoEcho (this app — an AI companion), and many more. Steven believes in building technology that genuinely helps underserved communities — health, education, speech, and emotional wellbeing. If anyone asks about Steven or who built YoEcho, speak about him with pride and accuracy.
 Voice: warm, direct, dry-witted. Real opinions. Short paragraphs, no bullets. Reference their actual words.
@@ -644,6 +855,7 @@ After reply include: PROFILE_UPDATE:{"name":"","values":[],"fears":[],"goals":[]
 If user mentions a person by name, include after reply on new line: RELATIONSHIP_UPDATE:{"PersonName":{"relation":"friend/family/colleague/etc","mood":"positive/negative/mixed","context":"one sentence"}}
 If THIS message contains a profound moment — something the user has never said before, a realisation, a confession, or a turning point — include after reply: ANCHOR:{"theme":"one word","reflection":"one sentence echo of what they said"}
 Only include ANCHOR when truly significant. Not every message. Maybe 1 in 10.
+Music: you can play the person music that you compose live (original, synthesized, endless, never the same twice). ONLY play music when the person asks for it in their latest message (play, put on, music, a song, a beat, "something to listen to"). Never start music on your own, never offer or suggest it, even when they are low or celebrating — just be present. To start or change music when asked, add, on its own last line: MUSIC:{"mood":"joy|hope|love|neutral|sadness|fear|anger|confusion","intent":"match|lift|calm","style":"afrobeats|amapiano|lofi|house|trap|rnb|ambient|cinematic|acoustic","energy":0.5,"note":"why, a few words"}  (style and energy optional; omit style to let the music choose). intent: match = mirror their mood, lift = travel gently toward brighter, calm = settle them down. For sadness, fear, anger or anxiety default to lift or calm unless they say they want to sit in it (then match). Other commands: MUSIC:{"cmd":"next"} for a fresh piece, MUSIC:{"cmd":"steer","energy":0.3,"bpm":-10} to adjust live (energy between -0.5 and 0.5), MUSIC:{"cmd":"stop"}. Only say music is playing if you included the tag; never mention the tag or JSON. When you start music keep your reply to one or two warm lines — the music does the talking. ${musicTaste()}
 Known: Name:${p.name||"?"} Values:${(p.values||[]).join(",")||"-"} Fears:${(p.fears||[]).join(",")||"-"} Goals:${(p.goals||[]).join(",")||"-"}
 ${arc?"Emotional arc: "+arc:""}
 ${anchors.length?"Anchors (significant moments to thread back): "+anchors.slice(-3).map(a=>'"'+a.quote.slice(0,80)+'" — '+a.theme).join(" | "):""}
@@ -1021,6 +1233,7 @@ function Bubble({msg,isWiser,mood,onSpeak,activeSpeaking,onMonologue}){
       {isUser?msg.content:disp}{!isUser&&disp!==msg.content&&<span style={{opacity:.22}}>▌</span>}
     </div>
     {isUser&&<div style={{fontSize:8,color:"rgba(196,168,130,.42)",marginTop:4,fontFamily:SS}}>{time}</div>}
+    {!isUser&&msg.music&&<MusicCard music={msg.music} mood={mood}/>}
     {!isUser&&msg.monologue&&<div style={{paddingLeft:24,marginTop:6,padding:"8px 14px 8px 24px",background:"rgba(196,168,130,.05)",borderLeft:"2px solid rgba(196,168,130,.15)",borderRadius:"0 10px 10px 0",maxWidth:"88%"}}>
       <div style={{fontSize:7,color:"rgba(196,168,130,.35)",letterSpacing:".12em",fontFamily:SS,marginBottom:4}}>ECHO'S FIRST THOUGHT</div>
       <div style={{fontSize:13,color:"rgba(235,228,216,.55)",lineHeight:1.8,fontStyle:"italic",fontFamily:SF}}>{msg.monologue}</div>
@@ -1622,6 +1835,16 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
     setSpeaking(false);
     setSpeakingBubble(null);
   },[]);
+  useEffect(()=>{ window.dispatchEvent(new CustomEvent("echoscreen",{detail:screen})); },[screen]);
+  // ── music: duck while Echo speaks, go silent while the mic listens, unlock audio on first touch, preload when idle
+  useEffect(()=>{ const M=window.EchoMusic; if(M) M.duck(speaking); },[speaking]);
+  useEffect(()=>{ const M=window.EchoMusic; if(M) M.hold(listening); },[listening]);
+  useEffect(()=>{
+    const un=()=>{ if(window.EchoMusic){ try{window.EchoMusic.unlock();}catch(e){} document.removeEventListener("pointerdown",un); } };
+    document.addEventListener("pointerdown",un,{passive:true});
+    const id=setTimeout(()=>{ const c=navigator.connection; if(!(c&&(c.saveData||/(^|-)2g$/.test(c.effectiveType||"")))) loadEchoMusic().catch(()=>{}); },3500);
+    return()=>{ document.removeEventListener("pointerdown",un); clearTimeout(id); };
+  },[]);
   const toggleSpeak=useCallback(()=>{
     // Check actual engine state, not just React state (avoids stale closure)
     const actuallyPlaying = window.speechSynthesis?.speaking || speaking;
@@ -1719,10 +1942,20 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
         setAnchors(newAnchors);
         if(profileId) db.saveAnchor(profileId,anchor).catch(()=>{});
       }
-      const clean=stripAnchor(stripRelUpdate(stripMood(raw)));
+      // Music only ever starts when the person asked for it in this message; a stray model tag is ignored (stop is always honoured).
+      const askedMusic=!!sniffMusic(text)||/\b(music|songs?|beats?|tunes?|play)\b/i.test(text);
+      let mcmd=extractMusic(raw);
+      if(mcmd&&!askedMusic&&mcmd.cmd!=="stop") mcmd=null;
+      if(!mcmd) mcmd=sniffMusic(text);
+      let clean=stripMusic(stripAnchor(stripRelUpdate(stripMood(raw))));
+      let musicMsg=null;
+      if(mcmd){
+        try{ musicMsg=await runMusic(mcmd,parseMood(raw)||mood); }catch(e){ musicMsg={error:"I couldn't load the music engine — check your connection and ask again."}; }
+        if(!clean&&musicMsg&&!musicMsg.error) clean=musicMsg.stopped?"Music off.":"Here you go.";
+      }
       lastEcho.current=clean;
       const idx=history.length;
-      setChatMsgs(p=>[...p,{role:"echo",content:clean,mood:parseMood(raw)||"neutral"}]);
+      setChatMsgs(p=>[...p,{role:"echo",content:clean,mood:parseMood(raw)||"neutral",...(musicMsg?{music:musicMsg}:{})}]);
       const newTotal=totalMsgs+2; setTotalMsgs(newTotal);
       if(profileId){
         const cid=chatId;
@@ -1936,7 +2169,7 @@ What was your real first thought — before the polished reply?`}],
           {profileId&&<p style={{fontSize:8,color:m.acc,opacity:.4,marginTop:6,fontFamily:SS,letterSpacing:".06em"}}>key: {profileId}</p>}
         </div>
         <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",paddingBottom:8}}>
-          {[["⌂","Home","home"],["◎","Chat","chat"],["✦","Wiser You","wiser"],["✎","Journal","journal"],["⚡","Debates","debate"],["◉","Deep Beliefs","beliefs"],["◈","Patterns","patterns"],["🗺","Relationships","relationships"],["⚓","Anchors","anchors"],["🎓","Tutor Mode","tutor"],["◬","Echo State","echostate"]].map(([ico,lbl,sc])=>(
+          {[["⌂","Home","home"],["◎","Chat","chat"],["✦","Wiser You","wiser"],["✎","Journal","journal"],["⚡","Debates","debate"],["◉","Deep Beliefs","beliefs"],["◈","Patterns","patterns"],["🗺","Relationships","relationships"],["⚓","Anchors","anchors"],["♫","Music","music"],["🎓","Tutor Mode","tutor"],["◬","Echo State","echostate"]].map(([ico,lbl,sc])=>(
             <button key={sc} onClick={()=>go(sc)} style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.62)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
               <span style={{fontSize:14,opacity:.65}}>{ico}</span>{lbl}
             </button>
@@ -1945,7 +2178,7 @@ What was your real first thought — before the polished reply?`}],
             style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
             <span style={{fontSize:14,opacity:.65}}>◉</span>App Tour
           </button>
-          <button onClick={()=>{setMenu(false);setScreen("login");setChatMsgs([]);setWiserMsgs([]);setProfileId(null);stopEcho();}}
+          <button onClick={()=>{setMenu(false);setScreen("login");setChatMsgs([]);setWiserMsgs([]);setProfileId(null);stopEcho();if(window.EchoMusic)window.EchoMusic.stop();}}
             style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
             <span style={{fontSize:14,opacity:.65}}>⎋</span>Switch Key
           </button>
@@ -2041,6 +2274,7 @@ What was your real first thought — before the polished reply?`}],
           <div style={{fontSize:7,color:m.acc,opacity:.28,letterSpacing:".1em",fontFamily:SS}}>MEMORY + VOICE + CLAUDE · SAYTECH</div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>go("music")} aria-label="Music" style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:m.acc,opacity:.8,lineHeight:1}}>♫</button>
           <button onClick={()=>{if(speaking)stopEcho();setVoiceOn(v=>!v);}} style={{background:"transparent",border:"none",fontSize:17,cursor:"pointer",opacity:voiceOn?1:.35,lineHeight:1}}>{voiceOn?"🔊":"🔇"}</button>
           <button onClick={()=>setMenu(true)} style={{background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.24)",borderRadius:19,padding:"7px 15px",color:m.acc,fontSize:9,letterSpacing:".12em",cursor:"pointer",fontFamily:SS}}>MENU</button>
         </div>
@@ -2134,6 +2368,7 @@ What was your real first thought — before the polished reply?`}],
       <style>{CSS}</style><Bg mood={mood}/>
       <Hdr title="YOECHO" sub={chatSub+(window.__echoAI?" · AI · "+window.__echoAI.toUpperCase():"")} onBack={()=>setScreen("home")} mood={mood}
         right={<div style={{display:"flex",gap:7,alignItems:"center"}}>
+          <button onClick={()=>go("music")} aria-label="Music" style={{background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.22)",borderRadius:14,padding:"5px 10px",color:m.acc,fontSize:11,cursor:"pointer",fontFamily:SS,lineHeight:1}}>♫</button>
           <button onClick={()=>setScreen("chats")} style={{background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.22)",borderRadius:14,padding:"5px 10px",color:m.acc,fontSize:8,letterSpacing:".1em",cursor:"pointer",fontFamily:SS}}>☰ CHATS</button>
           <button onClick={()=>createNewChat()} style={{background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,border:"none",borderRadius:14,padding:"5px 10px",color:"#0c0905",fontSize:8,letterSpacing:".1em",cursor:"pointer",fontFamily:SS,fontWeight:700}}>+ NEW</button>
           <Orb size={28} mood={mood} tick={tick} speaking={speaking} listening={listening}/>
@@ -2482,6 +2717,8 @@ What was your real first thought — before the polished reply?`}],
   }
 
   // ── TUTOR ─────────────────────────────────────────────────────────────────────
+  if(screen==="music") return <MusicScreen mood={mood} tick={tick} speaking={speaking} onBack={()=>setScreen("home")}/>;
+
   if(screen==="tutor") return(
     <div style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",fontFamily:SF}}>
       <style>{CSS}</style><Bg mood={mood}/>
@@ -2667,7 +2904,7 @@ What was your real first thought — before the polished reply?`}],
 
 // Mount the app
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(YoEcho));
+root.render(React.createElement(React.Fragment,null,React.createElement(YoEcho),React.createElement(MusicDock)));
 
   </script>
 

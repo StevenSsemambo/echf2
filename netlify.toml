@@ -33,3 +33,9 @@
   for = "/vendor/*"
   [headers.values]
     Cache-Control = "public, max-age=604800"
+
+# Generative music engine (one file, versioned with ?v= in index.html)
+[[headers]]
+  for = "/echo-music.js"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
