@@ -142,10 +142,11 @@
     guitar: { fam: "pluck", b: .5 }, pluck: { fam: "pluck", b: .5 },
     kalimba: { fam: "mallet", b: .7 }, marimba: { fam: "mallet", b: .55 }, bells: { fam: "mallet", b: .85 },
     strings: { fam: "sus", b: .5 }, pad: { fam: "sus", b: .4 }, choir: { fam: "sus", b: .35 },
-    flute: { fam: "wind", b: .6 }, brass: { fam: "wind", b: .55 }, synth: { fam: "synth", b: .65 }
+    flute: { fam: "wind", b: .6 }, brass: { fam: "wind", b: .55 }, synth: { fam: "synth", b: .65 },
+    sax: { fam: "reed", b: .5 }, violin: { fam: "bowed", b: .6 }
   };
   /* instrument articulation: how much of the written length a note holds */
-  var ARTIC = { keys: .85, pluck: .5, mallet: .5, sus: .96, wind: .92, synth: .8 };
+  var ARTIC = { keys: .85, pluck: .5, mallet: .5, sus: .96, wind: .92, synth: .8, reed: .93, bowed: .97 };
 
   /* styles: the rhythmic skeleton + instrument palette. Patterns are 16 steps (one bar of 16th notes). */
   var STYLE_LIST = ["afrobeats", "amapiano", "lofi", "house", "trap", "rnb", "ambient", "cinematic", "acoustic"];
@@ -153,17 +154,17 @@
     afrobeats: { name: "Afrobeats", bpm: [96, 108], swing: .22, arc: "groove", harm: 1, drums: 2, kit: "afro", feel: "synco",
       drum: { kick: "x..x..x...x...x.", snare: "....x.......x...", clap: "....x.......x..x", hat: "x.xxx.x.x.xxx.x.", open: ".......x.......x", shaker: "xoxoxoxoxoxoxoxo", cLo: "..x...x...x..x..", cHi: "...x.x....x.x..." },
       comp: ["x..x..x...x..x..", "..x..x..x..x..x.", "x..x..x..x..x..."], bass: ["r..r..5...r..a..", "r..r..r...5..o..", "r.....r.r..5..a."], bassMax: 3,
-      pal: { pad: ["strings", "pad"], comp: ["guitar", "keys", "marimba"], lead: ["kalimba", "flute", "guitar", "marimba"], arp: ["kalimba", "pluck"], bass: ["pluck", "sub"] },
+      pal: { pad: ["strings", "pad"], comp: ["guitar", "keys", "marimba"], lead: ["kalimba", "flute", "sax", "guitar", "marimba"], arp: ["kalimba", "pluck"], bass: ["pluck", "sub"] },
       arp: { rate: 2, kind: "updown", gate: .8 }, duck: .22, delay: .22, tex: { vinyl: 0, rain: 0, air: 0 } },
     amapiano: { name: "Amapiano", bpm: [108, 114], swing: .15, arc: "groove", harm: 2, drums: 2, kit: "afro", feel: "synco",
       drum: { kick: "x...x...x...x...", snare: "", clap: "....x.......x...", hat: "x.oxo.xox.oxo.xo", open: "..x...x...x...x.", shaker: "xoxoxoxoxoxoxoxo", cLo: "", cHi: "" },
       comp: ["x..x..x...x..x.x", "..x..x..x..x.x..", "x.....x..x.x...."], bass: ["r..r..r...r..5..", "r.....5.r..r.o..", "r..r.....r..a.5."], bassMax: 3,
-      pal: { pad: ["pad", "strings"], comp: ["piano", "keys"], lead: ["piano", "flute", "kalimba", "synth"], arp: ["bells", "pluck"], bass: ["log", "sub"] },
+      pal: { pad: ["pad", "strings"], comp: ["piano", "keys"], lead: ["piano", "sax", "flute", "kalimba", "synth"], arp: ["bells", "pluck"], bass: ["log", "sub"] },
       arp: { rate: 2, kind: "alberti", gate: .7 }, duck: .3, delay: .15, tex: { vinyl: 0, rain: 0, air: 0 } },
     lofi: { name: "Lo-fi", bpm: [70, 86], swing: .55, arc: "wave", harm: 1, drums: 2, kit: "lofi", feel: "sparse",
       drum: { kick: "x.....x...x.....", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: ".......x.......x", shaker: "", cLo: "", cHi: "" },
       comp: ["x.....x...x.....", "x..x....x.......", "x.....x.....x..."], bass: ["r.......r.....5.", "r.....r...5.....", "r.......5.r....."], bassMax: 6,
-      pal: { pad: ["pad", "strings"], comp: ["keys", "piano", "guitar"], lead: ["keys", "guitar", "kalimba", "flute"], arp: ["kalimba", "bells"], bass: ["sub", "pluck"] },
+      pal: { pad: ["pad", "strings"], comp: ["keys", "piano", "guitar"], lead: ["keys", "sax", "guitar", "kalimba", "flute"], arp: ["kalimba", "bells"], bass: ["sub", "pluck"] },
       arp: { rate: 2, kind: "up", gate: .45 }, duck: .12, delay: .3, tex: { vinyl: .35, rain: .08, air: 0 } },
     house: { name: "House", bpm: [120, 126], swing: .04, arc: "groove", harm: 1, drums: 2, kit: "edm", feel: "straight",
       drum: { kick: "x...x...x...x...", snare: "", clap: "....x.......x...", hat: "xoxoxoxoxoxoxoxo", open: "..x...x...x...x.", shaker: "", cLo: "", cHi: "" },
@@ -178,22 +179,22 @@
     rnb: { name: "R&B", bpm: [68, 84], swing: .35, arc: "wave", harm: 2, drums: 2, kit: "lofi", feel: "smooth",
       drum: { kick: "x.....x...x.....", snare: "........x.......", clap: "........x.......", hat: "x.x.x.x.x.x.x.x.", open: "", shaker: "", cLo: "", cHi: "" },
       comp: ["x.....x.x.......", "x..x....x..x....", "x.......x.x....."], bass: ["r.....r.......5.", "r.......r..5....", "r..r....r......."], bassMax: 6,
-      pal: { pad: ["strings", "pad"], comp: ["keys", "guitar", "piano"], lead: ["guitar", "keys", "flute", "strings"], arp: ["bells", "kalimba"], bass: ["sub", "808"] },
+      pal: { pad: ["strings", "pad"], comp: ["keys", "guitar", "piano"], lead: ["guitar", "sax", "keys", "violin", "flute", "strings"], arp: ["bells", "kalimba"], bass: ["sub", "808"] },
       arp: { rate: 2, kind: "up", gate: .4 }, duck: .1, delay: .25, tex: { vinyl: .12, rain: 0, air: 0 } },
     ambient: { name: "Ambient", bpm: [58, 72], swing: 0, arc: "drift", harm: 2, drums: 0, kit: "heavy", feel: "sparse",
       drum: { kick: "", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "" },
       comp: ["x...............", "x.......x......."], bass: ["r..............."], bassMax: 16,
-      pal: { pad: ["pad", "choir", "strings"], comp: ["piano", "bells", "kalimba"], lead: ["flute", "bells", "piano"], arp: ["bells", "kalimba"], bass: ["sub"] },
+      pal: { pad: ["pad", "choir", "strings"], comp: ["piano", "bells", "kalimba"], lead: ["flute", "violin", "bells", "piano"], arp: ["bells", "kalimba"], bass: ["sub"] },
       arp: { rate: 4, kind: "rand", gate: .45 }, duck: 0, delay: .35, tex: { vinyl: 0, rain: .22, air: .3 } },
     cinematic: { name: "Cinematic", bpm: [70, 90], swing: 0, arc: "story", harm: 2, drums: 1, kit: "heavy", feel: "sparse",
       drum: { kick: "x...............", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "", tom: "........x......." },
       comp: ["x...............", "x.......x......."], bass: ["r...............", "r.......r......."], bassMax: 16,
-      pal: { pad: ["strings", "choir", "pad"], comp: ["piano", "strings"], lead: ["strings", "flute", "brass", "piano"], arp: ["piano", "bells", "pluck"], bass: ["sub", "808"] },
+      pal: { pad: ["strings", "choir", "pad"], comp: ["piano", "strings"], lead: ["violin", "strings", "flute", "brass", "piano"], arp: ["piano", "bells", "pluck"], bass: ["sub", "808"] },
       arp: { rate: 2, kind: "updown", gate: .6 }, duck: 0, delay: .2, tex: { vinyl: 0, rain: 0, air: .3 } },
     acoustic: { name: "Acoustic", bpm: [80, 100], swing: .15, arc: "wave", harm: 1, drums: 1, kit: "lofi", feel: "medium", pick: true,
       drum: { kick: "x.......x.......", snare: "", clap: "", hat: "", open: "", shaker: "x.x.x.x.x.x.x.x.", cLo: "", cHi: "", rim: "....x.......x..." },
       comp: ["0.2.3.2.1.2.3.2.", "0.1.2.3.2.1.2.3.", "0..2.3..1.2.3.2."], bass: ["r.......5.......", "r.....r.5......."], bassMax: 6,
-      pal: { pad: ["strings", "pad"], comp: ["guitar", "piano"], lead: ["flute", "guitar", "kalimba", "piano"], arp: ["guitar", "kalimba"], bass: ["pluck", "sub"] },
+      pal: { pad: ["strings", "pad"], comp: ["guitar", "piano"], lead: ["flute", "violin", "guitar", "kalimba", "piano"], arp: ["guitar", "kalimba"], bass: ["pluck", "sub"] },
       arp: { rate: 2, kind: "alberti", gate: .6 }, duck: 0, delay: .2, tex: { vinyl: 0, rain: 0, air: .08 } }
   };
 
@@ -742,8 +743,8 @@
     arp: { lvl: .5, rv: .38, dy: .3, duck: .6 }, tex: { lvl: .3, rv: 0, dy: 0, duck: 0 }, fx: { lvl: .5, rv: .3, dy: 0, duck: 0 }
   };
   /* per-instrument loudness trim, measured so a middle C at the same velocity sounds equally loud for every instrument */
-  var LOUD = { piano: .76, keys: .9, organ: .57, guitar: 1.1, pluck: 1.25, kalimba: 1.18, marimba: 1.28, bells: 1, strings: 1, pad: 1.05, choir: 1.2, flute: .35, brass: .59, synth: 1.15, sub: .6, "808": .65, synthbass: .5, log: 1.2 };
-  var COST = { piano: 4, keys: 2, organ: 4, guitar: 1, pluck: 2, kalimba: 2, marimba: 3, bells: 3, strings: 4, pad: 4, choir: 5, flute: 3, brass: 3, synth: 3, sub: 2, "808": 2, synthbass: 3, log: 2 };
+  var LOUD = { piano: .76, keys: .9, organ: .57, guitar: 1.1, pluck: 1.25, kalimba: 1.18, marimba: 1.28, bells: 1, strings: 1, pad: 1.05, choir: 1.2, flute: .35, brass: .59, sax: .33, violin: .32, synth: 1.15, sub: .6, "808": .65, synthbass: .5, log: 1.2 };
+  var COST = { piano: 4, keys: 2, organ: 4, guitar: 1, pluck: 2, kalimba: 2, marimba: 3, bells: 3, strings: 4, pad: 4, choir: 5, flute: 3, brass: 3, sax: 4, violin: 4, synth: 3, sub: 2, "808": 2, synthbass: 3, log: 2 };
   var ROLE_STRIP = { pad: "pad", comp: "comp", lead: "lead", arp: "arp", bass: "bass" };
   var PERC_STRIP = { hat: "hats", open: "hats", shaker: "hats", conga: "hats", rim: "hats" };
 
@@ -982,6 +983,35 @@
       E.vib.connect(a.detune); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.5 * v, t + .07); g.gain.setValueAtTime(.5 * v, t + hold); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .15);
       bg.gain.value = .1; a.connect(g); b.connect(bg); bg.connect(g); g.connect(o);
       E.noise(t, hold + .1, "bandpass", Math.min(7000, f * 3), 1.1, .045 * v, hold + .1, o);
+    };
+    /* vibrato that fades in after the note settles, like a player would (depth in cents multiplier) */
+    function lateVib(E, os, t, depth, delay) {
+      var vg = ctx.createGain(); vg.gain.setValueAtTime(0, t); vg.gain.setValueAtTime(0, t + delay); vg.gain.linearRampToValueAtTime(depth, t + delay + .35); E.vib.connect(vg); vg.connect(os.detune);
+    }
+    INST.sax = function (E, f, t, d, v, o) {
+      var hold = Math.max(.25, d), end = t + hold + .25, g = ctx.createGain(), lp = ctx.createBiquadFilter(), hon = ctx.createBiquadFilter(), body = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.Q.value = .9; lp.frequency.setValueAtTime(Math.min(3200, f * 4 + 500), t); lp.frequency.linearRampToValueAtTime(Math.min(4200, f * 6 + 900), t + .1); lp.frequency.linearRampToValueAtTime(Math.min(2600, f * 4 + 600), t + hold);
+      hon.type = "peaking"; hon.frequency.value = 1150; hon.Q.value = 1.4; hon.gain.value = 7;
+      body.type = "peaking"; body.frequency.value = 2400; body.Q.value = 1; body.gain.value = 3;
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.55 * v, t + .05); g.gain.setValueAtTime(.55 * v, t + hold * .85); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .18);
+      var a = E.osc("sawtooth", f, t, end, 0), b = E.osc("square", f, t, end, 6), bg = ctx.createGain(); bg.gain.value = .35;
+      /* reed scoop: pitch rises into the note */
+      [a, b].forEach(function (os) { os.frequency.setValueAtTime(f * .965, t); os.frequency.exponentialRampToValueAtTime(f, t + .045); lateVib(E, os, t, 2.4, .22); });
+      a.connect(lp); b.connect(bg); bg.connect(lp); lp.connect(hon); hon.connect(body); body.connect(g); g.connect(o);
+      E.noise(t, hold + .1, "bandpass", Math.min(6000, f * 4 + 800), 1.4, .05 * v, hold + .1, o);
+    };
+    INST.violin = function (E, f, t, d, v, o) {
+      var hold = Math.max(.3, d), end = t + hold + .3, g = ctx.createGain(), lp = ctx.createBiquadFilter(), b1 = ctx.createBiquadFilter(), b2 = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.Q.value = .7; lp.frequency.setValueAtTime(Math.min(3000, f * 3 + 700), t); lp.frequency.linearRampToValueAtTime(clamp(f * 6 + 800, 2200, 6000), t + .25);
+      b1.type = "peaking"; b1.frequency.value = 450; b1.Q.value = 1.2; b1.gain.value = 5;
+      b2.type = "peaking"; b2.frequency.value = 2900; b2.Q.value = 1.5; b2.gain.value = 4;
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.5 * v, t + .11); g.gain.setValueAtTime(.5 * v, t + hold * .9); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .28);
+      var dts = E.lite ? [0] : [-5, 5];
+      dts.forEach(function (dt) { var os = E.osc("sawtooth", f, t, end, dt); lateVib(E, os, t, 4.2, .18); os.connect(lp); });
+      lp.connect(b1); b1.connect(b2); b2.connect(g); g.connect(o);
+      /* bow noise: a short scrape at the start, a quiet hiss while it sounds */
+      E.noise(t, .09, "highpass", 3500, .8, .07 * v, .09, o);
+      E.noise(t, hold + .1, "bandpass", Math.min(7000, f * 5), 1.2, .02 * v, hold + .1, o);
     };
     INST.brass = function (E, f, t, d, v, o) { sustained(E, f, t, d, v, o, "sawtooth", [-4, 4], Math.min(5000, 900 + f * 5), .04, .15, .3, 350); };
     INST.synth = function (E, f, t, d, v, o) {
