@@ -471,7 +471,7 @@ function startRecognitionSync(onInterim, onFinal, onError) {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-const parseMood  = t=>{ const x=t.match(/^MOOD:(\w+)/m); return x&&MOODS[x[1]]?x[1]:null; };
+const parseMood  = t=>{ const x=String(t||"").match(/^[\s\[\(`*_]*MOOD\s*[:=]\s*(\w+)/im); const k=x&&x[1].toLowerCase(); return k&&MOODS[k]?k:null; };
 // Removes every machine tag (PROFILE_UPDATE, RELATIONSHIP_UPDATE, ANCHOR, MUSIC, JOURNAL_INSIGHT) wherever the model put it:
 // same line or new line, one-line or multi-line JSON, nested braces, even a reply cut off in the middle of the JSON.
 function stripTagBlocks(t){
@@ -491,15 +491,29 @@ function stripTagBlocks(t){
       }
       end=i;
     } else { const nl=s.indexOf("\n",after); end=nl<0?s.length:nl; }
-    s=s.slice(0,start)+s.slice(end);
+    // the model often wraps a tag in brackets, brackets-and-backticks or bold: take the wrapper with it
+    let st=start, en=end;
+    while(st>0&&/[\[\(`*_]/.test(s[st-1])) st--;
+    while(en<s.length&&/[\]\)`*_]/.test(s[en])) en++;
+    s=s.slice(0,st)+s.slice(en);
   }
   return s;
 }
-const stripMood  = t=>stripTagBlocks(String(t||"").replace(/^\s*MOOD\s*:\s*\w+[ \t]*\n?/mi,"")).replace(/\[music (?:now playing|started|stopped)[^\]]*\]/gi,"").replace(/\n{3,}/g,"\n\n").trim();
+const MOOD_NAMES="neutral|joy|hope|sadness|fear|anger|love|confusion";
+const stripMood  = t=>stripTagBlocks(String(t||"").replace(/^[\s\[\(`*_]*MOOD\s*[:=]\s*\w+[ \t\]\)`*_]*\n?/m,"")
+    .replace(new RegExp("^[\\s\\[\\(`*_]*mood\\s*[:=]\\s*(?:"+MOOD_NAMES+")\\b[ \\t\\]\\)`*_]*\\n?","i"),""))
+  .replace(new RegExp("[\\[\\(`*_]*\\bMOOD\\s*[:=]\\s*(?:"+MOOD_NAMES+")\\b[\\]\\)`*_]*","g"),"")
+  .replace(/\[music (?:now playing|started|stopped)[^\]]*\]/gi,"")
+  .replace(/\[\s*\]|\(\s*\)/g,"").replace(/[ \t]*[\[\(][ \t]*$/,"").replace(/^[ \t]*[\]\)][ \t]*/,"")
+  .replace(/\n{3,}/g,"\n\n").trim();
 // Last line of defence before speech: nothing that looks like a tag, JSON or a brace is ever read aloud.
 function scrubSpeech(t){
-  return stripTagBlocks(String(t||"")).replace(/\[music[^\]]*\]/gi," ").replace(/\bMOOD\s*:\s*\w+/g," ").replace(/"[A-Za-z_]+"\s*:/g," ").replace(/[{}]/g," ").replace(/[ \t]{2,}/g," ").trim();
+  return stripTagBlocks(String(t||""))
+    .replace(/\bMOOD\s*[:=]\s*\w+/g," ").replace(/\[[^\]\n]{0,80}\]/g," ")      // [stage directions], [notes], [tags]
+    .replace(/"[A-Za-z_]+"\s*:/g," ").replace(/[{}\[\]`*]/g," ")
+    .replace(/[ \t]{2,}/g," ").trim();
 }
+
 function extractPU(raw){ try{ const m=raw.match(/PROFILE_UPDATE:(\{[^}]*\})/); if(m) return JSON.parse(m[1]); }catch(e){} return null; }
 // inferBeliefs now delegates to scoreBeliefs
 function inferBeliefs(msgs, storedHits = {}) { return scoreBeliefs(msgs, storedHits); }
