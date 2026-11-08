@@ -642,7 +642,7 @@ function loadEchoMusic(){
   if(_musicPromise) return _musicPromise;
   _musicPromise=new Promise((res,rej)=>{
     const el=document.createElement("script");
-    el.src="/echo-music.js?v=2"; el.async=true;
+    el.src="/echo-music.js?v=3"; el.async=true;
     el.onload=()=>{ if(window.EchoMusic){ window.dispatchEvent(new Event("echomusic-ready")); res(window.EchoMusic); } else rej(new Error("music engine missing")); };
     el.onerror=()=>rej(new Error("could not load the music engine"));
     document.head.appendChild(el);

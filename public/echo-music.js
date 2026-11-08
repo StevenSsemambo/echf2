@@ -151,47 +151,47 @@
   /* styles: the rhythmic skeleton + instrument palette. Patterns are 16 steps (one bar of 16th notes). */
   var STYLE_LIST = ["afrobeats", "amapiano", "lofi", "house", "trap", "rnb", "ambient", "cinematic", "acoustic"];
   var STYLES = {
-    afrobeats: { name: "Afrobeats", bpm: [96, 108], swing: .22, arc: "groove", harm: 1, drums: 2, kit: "afro", feel: "synco",
-      drum: { kick: "x..x..x...x...x.", snare: "....x.......x...", clap: "....x.......x..x", hat: "x.xxx.x.x.xxx.x.", open: ".......x.......x", shaker: "xoxoxoxoxoxoxoxo", cLo: "..x...x...x..x..", cHi: "...x.x....x.x..." },
+    afrobeats: { name: "Afrobeats", level: 1.08, lay: .35, bpm: [96, 108], swing: .22, arc: "groove", harm: 1, drums: 2, kit: "afro", feel: "synco",
+      drum: { kick: "x..x..x...x...x.", snare: "....x.......x...", clap: "....x.......x..x", hat: "x.xxx.x.x.xxx.x.", open: ".......x.......x", shaker: "xoxoxoxoxoxoxoxo", cLo: "..x...x...x..x..", cHi: "...x.x....x.x...", rim: "x..x..x.x..x..x.", rimV: .3 },
       comp: ["x..x..x...x..x..", "..x..x..x..x..x.", "x..x..x..x..x..."], bass: ["r..r..5...r..a..", "r..r..r...5..o..", "r.....r.r..5..a."], bassMax: 3,
       pal: { pad: ["strings", "pad"], comp: ["guitar", "keys", "marimba"], lead: ["kalimba", "flute", "sax", "guitar", "marimba"], arp: ["kalimba", "pluck"], bass: ["pluck", "sub"] },
       arp: { rate: 2, kind: "updown", gate: .8 }, duck: .22, delay: .22, tex: { vinyl: 0, rain: 0, air: 0 } },
-    amapiano: { name: "Amapiano", bpm: [108, 114], swing: .15, arc: "groove", harm: 2, drums: 2, kit: "afro", feel: "synco",
+    amapiano: { name: "Amapiano", level: 1.06, lay: .3, bpm: [108, 114], swing: .15, arc: "groove", harm: 2, drums: 2, kit: "afro", feel: "synco",
       drum: { kick: "x...x...x...x...", snare: "", clap: "....x.......x...", hat: "x.oxo.xox.oxo.xo", open: "..x...x...x...x.", shaker: "xoxoxoxoxoxoxoxo", cLo: "", cHi: "" },
       comp: ["x..x..x...x..x.x", "..x..x..x..x.x..", "x.....x..x.x...."], bass: ["r..r..r...r..5..", "r.....5.r..r.o..", "r..r.....r..a.5."], bassMax: 3,
       pal: { pad: ["pad", "strings"], comp: ["piano", "keys"], lead: ["piano", "sax", "flute", "kalimba", "synth"], arp: ["bells", "pluck"], bass: ["log", "sub"] },
       arp: { rate: 2, kind: "alberti", gate: .7 }, duck: .3, delay: .15, tex: { vinyl: 0, rain: 0, air: 0 } },
-    lofi: { name: "Lo-fi", bpm: [70, 86], swing: .55, arc: "wave", harm: 1, drums: 2, kit: "lofi", feel: "sparse",
+    lofi: { name: "Lo-fi", level: 1.06, lay: .9, wobble: .0011, bpm: [70, 86], swing: .55, arc: "wave", harm: 1, drums: 2, kit: "lofi", feel: "sparse",
       drum: { kick: "x.....x...x.....", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: ".......x.......x", shaker: "", cLo: "", cHi: "" },
       comp: ["x.....x...x.....", "x..x....x.......", "x.....x.....x..."], bass: ["r.......r.....5.", "r.....r...5.....", "r.......5.r....."], bassMax: 6,
       pal: { pad: ["pad", "strings"], comp: ["keys", "piano", "guitar"], lead: ["keys", "sax", "guitar", "kalimba", "flute"], arp: ["kalimba", "bells"], bass: ["sub", "pluck"] },
       arp: { rate: 2, kind: "up", gate: .45 }, duck: .12, delay: .3, tex: { vinyl: .35, rain: .08, air: 0 } },
-    house: { name: "House", bpm: [120, 126], swing: .04, arc: "groove", harm: 1, drums: 2, kit: "edm", feel: "straight",
+    house: { name: "House", level: 0.85, lay: 0, bpm: [120, 126], swing: .04, arc: "groove", harm: 1, drums: 2, kit: "edm", feel: "straight",
       drum: { kick: "x...x...x...x...", snare: "", clap: "....x.......x...", hat: "xoxoxoxoxoxoxoxo", open: "..x...x...x...x.", shaker: "", cLo: "", cHi: "" },
       comp: ["..x...x...x...x.", "x..x..x...x..x..", "..x...x..x..x..."], bass: ["..r...r...r...r.", "..r...r...r..5r.", ".r..r..r.r..r.5."], bassMax: 2,
       pal: { pad: ["pad", "strings"], comp: ["organ", "piano", "keys"], lead: ["synth", "bells", "pluck"], arp: ["pluck", "synth"], bass: ["synthbass", "sub"] },
       arp: { rate: 1, kind: "up", gate: .75 }, duck: .5, delay: .25, tex: { vinyl: 0, rain: 0, air: 0 } },
-    trap: { name: "Trap", bpm: [68, 76], swing: 0, arc: "groove", harm: 2, drums: 2, kit: "trap", feel: "sparse",
+    trap: { name: "Trap", level: 1.25, lay: .15, bpm: [68, 76], swing: 0, arc: "groove", harm: 2, drums: 2, kit: "trap", feel: "sparse",
       drum: { kick: "x.....x..x.x....", snare: "........x.......", clap: "........x.......", hat: "x.x.x.x.x.x.x.x.", open: ".......x.......x", shaker: "", cLo: "", cHi: "" },
       comp: ["x.......x.......", "x.....x.........", "x.......x..x...."], bass: ["r.....r..r.r....", "r.......r.....5.", "r..r......r..a.."], bassMax: 8,
       pal: { pad: ["pad", "choir"], comp: ["keys", "bells", "piano"], lead: ["bells", "flute", "synth", "kalimba"], arp: ["bells", "pluck"], bass: ["808"] },
       arp: { rate: 2, kind: "rand", gate: .5 }, duck: .1, delay: .28, rolls: true, tex: { vinyl: 0, rain: 0, air: .1 } },
-    rnb: { name: "R&B", bpm: [68, 84], swing: .35, arc: "wave", harm: 2, drums: 2, kit: "lofi", feel: "smooth",
+    rnb: { name: "R&B", level: 1.24, lay: .8, wobble: .0004, bpm: [68, 84], swing: .35, arc: "wave", harm: 2, drums: 2, kit: "lofi", feel: "smooth",
       drum: { kick: "x.....x...x.....", snare: "........x.......", clap: "........x.......", hat: "x.x.x.x.x.x.x.x.", open: "", shaker: "", cLo: "", cHi: "" },
       comp: ["x.....x.x.......", "x..x....x..x....", "x.......x.x....."], bass: ["r.....r.......5.", "r.......r..5....", "r..r....r......."], bassMax: 6,
       pal: { pad: ["strings", "pad"], comp: ["keys", "guitar", "piano"], lead: ["guitar", "sax", "keys", "violin", "flute", "strings"], arp: ["bells", "kalimba"], bass: ["sub", "808"] },
       arp: { rate: 2, kind: "up", gate: .4 }, duck: .1, delay: .25, tex: { vinyl: .12, rain: 0, air: 0 } },
-    ambient: { name: "Ambient", bpm: [58, 72], swing: 0, arc: "drift", harm: 2, drums: 0, kit: "heavy", feel: "sparse",
+    ambient: { name: "Ambient", level: 1.15, lay: .2, bpm: [58, 72], swing: 0, arc: "drift", harm: 2, drums: 0, kit: "heavy", feel: "sparse",
       drum: { kick: "", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "" },
       comp: ["x...............", "x.......x......."], bass: ["r..............."], bassMax: 16,
       pal: { pad: ["pad", "choir", "strings"], comp: ["piano", "bells", "kalimba"], lead: ["flute", "violin", "bells", "piano"], arp: ["bells", "kalimba"], bass: ["sub"] },
       arp: { rate: 4, kind: "rand", gate: .45 }, duck: 0, delay: .35, tex: { vinyl: 0, rain: .22, air: .3 } },
-    cinematic: { name: "Cinematic", bpm: [70, 90], swing: 0, arc: "story", harm: 2, drums: 1, kit: "heavy", feel: "sparse",
+    cinematic: { name: "Cinematic", level: 1.16, lay: .2, bpm: [70, 90], swing: 0, arc: "story", harm: 2, drums: 1, kit: "heavy", feel: "sparse",
       drum: { kick: "x...............", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "", tom: "........x......." },
       comp: ["x...............", "x.......x......."], bass: ["r...............", "r.......r......."], bassMax: 16,
       pal: { pad: ["strings", "choir", "pad"], comp: ["piano", "strings"], lead: ["violin", "strings", "flute", "brass", "piano"], arp: ["piano", "bells", "pluck"], bass: ["sub", "808"] },
       arp: { rate: 2, kind: "updown", gate: .6 }, duck: 0, delay: .2, tex: { vinyl: 0, rain: 0, air: .3 } },
-    acoustic: { name: "Acoustic", bpm: [80, 100], swing: .15, arc: "wave", harm: 1, drums: 1, kit: "lofi", feel: "medium", pick: true,
+    acoustic: { name: "Acoustic", level: 1.0, lay: .5, bpm: [80, 100], swing: .15, arc: "wave", harm: 1, drums: 1, kit: "lofi", feel: "medium", pick: true,
       drum: { kick: "x.......x.......", snare: "", clap: "", hat: "", open: "", shaker: "x.x.x.x.x.x.x.x.", cLo: "", cHi: "", rim: "....x.......x..." },
       comp: ["0.2.3.2.1.2.3.2.", "0.1.2.3.2.1.2.3.", "0..2.3..1.2.3.2."], bass: ["r.......5.......", "r.....r.5......."], bassMax: 6,
       pal: { pad: ["strings", "pad"], comp: ["guitar", "piano"], lead: ["flute", "violin", "guitar", "kalimba", "piano"], arp: ["guitar", "kalimba"], bass: ["pluck", "sub"] },
@@ -315,6 +315,9 @@
     pal.lead = pickInstrument("lead", style, recipe, rng, INSTR_META[pal.comp], forced.lead);
     pal.arp = pickInstrument("arp", style, recipe, rng, INSTR_META[pal.lead], forced.arp);
     pal.bass = pickInstrument("bass", style, recipe, rng, null, forced.bass);
+    /* a second melodic voice that answers the lead and doubles it a third below in big sections */
+    pal.ans = null;
+    for (var tries = 0; tries < 4 && !pal.ans; tries++) { var c = pickInstrument("lead", style, recipe, rng, INSTR_META[pal.lead], null); if (c !== pal.lead && c !== pal.comp && INSTR_META[c]) pal.ans = c; }
     return pal;
   }
   function pickStyle(recipe, rng, forced) {
@@ -359,7 +362,7 @@
    * It is a rule-based "band": a theme (motif) that is developed, chord loops that change between sections,
    * layers that enter and leave with the energy arc, and registers kept apart so instruments do not clash.
    */
-  var LEAD_CENTER = { flute: 74, kalimba: 76, bells: 84, piano: 69, keys: 67, guitar: 66, marimba: 72, strings: 69, brass: 63, synth: 72, organ: 64, pluck: 70, pad: 66, choir: 66 };
+  var LEAD_CENTER = { flute: 74, kalimba: 76, bells: 84, piano: 69, keys: 67, guitar: 66, marimba: 72, strings: 69, brass: 63, sax: 66, violin: 76, synth: 72, organ: 64, pluck: 70, pad: 66, choir: 66 };
   var ARP_CENTER = { bells: 84, kalimba: 79, pluck: 74, guitar: 70, piano: 74, synth: 76, marimba: 76, keys: 72, strings: 72 };
   var COMP_CENTER = { guitar: 57, piano: 62, keys: 62, organ: 58, marimba: 64, strings: 58, pad: 58 };
   var BASS_LOW = { sub: 31, "808": 31, log: 33, pluck: 33, synthbass: 33 };
@@ -483,7 +486,9 @@
       var m = S.theme.m[pb];
       if (mode === "varied") m = vary(m, 1);
       else if (sec.loop > 0 || S.cycle > 0) m = vary(m, .5);
-      var lift = (sec.lift && (sec.loop % 2) === 1) ? 7 : 0, n = m.on.length, atPhraseEnd = (pb === 3), halfEnd = (pb === 1);
+      var lift = (sec.lift && (sec.loop % 2) === 1) ? 7 : 0, n = m.on.length, atPhraseEnd = (pb === 3), halfEnd = (pb === 1), prevM = null;
+      var lf = fam(S.pal.lead), glidy = lf !== "pluck" && lf !== "mallet" && lf !== "keys";
+      var rich = !!(S.pal.ans && sec.layers.ans && (sec.kind === "chorus" || sec.kind === "drop" || sec.kind === "climax" || sec.kind === "swell"));
       for (var k = 0; k < n; k++) {
         var step = m.on[k], deg2 = m.deg[k] + lift;
         if (step % 4 === 0) deg2 = snapToChord(pcs, deg2);
@@ -494,9 +499,30 @@
         deg2 = clamp(deg2, -3, 14);
         var next = k < n - 1 ? m.on[k + 1] : 16, len = next - step;
         if (k === n - 1) len = Math.min(8, 16 - step);
-        var d = Math.max(1, Math.min(len, 12) * artic);
+        var legato = (k === n - 1 && atPhraseEnd) ? 1.12 : .95 + rng() * .1;
+        var d = Math.max(1, Math.min(len, 12) * artic * legato);
         if (k === n - 1 && atPhraseEnd && rng.chance(.25)) continue;
-        out.push({ s: step, r: "lead", i: S.pal.lead, m: orig + degSemi(S.mode, deg2), d: d, v: v0 * (step % 4 === 0 ? 1 : .82) * (1 + (rng() - .5) * .12), p: 1 });
+        var nm = orig + degSemi(S.mode, deg2), contour = .9 + .16 * Math.sin(Math.PI * (pb * 16 + step) / 64);
+        var evn = { s: step, r: "lead", i: S.pal.lead, m: nm, d: d, v: v0 * (step % 4 === 0 ? 1 : .82) * contour * (1 + (rng() - .5) * .12), p: 1 };
+        /* a player slides between close notes and sometimes pushes into a note from beside it */
+        if (glidy && prevM !== null && prevM !== nm && Math.abs(prevM - nm) <= 4 && rng.chance(.35)) evn.gl = prevM - nm;
+        else if (step > 0 && step % 4 === 0 && len >= 3 && rng.chance(.09)) out.push({ s: step - .45, r: "lead", i: S.pal.lead, m: lo56(orig + degSemi(S.mode, deg2 + rng.pick([-1, 1]))), d: .5, v: evn.v * .45, p: 3 });
+        out.push(evn); prevM = nm;
+        if (rich && step % 4 === 0 && rng.chance(.7)) out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + degSemi(S.mode, deg2 - 2)), d: d, v: evn.v * .55, p: 2, ans: 1 });
+      }
+      return out;
+    }
+    function lo56(x) { return x < 56 ? x + 12 : x; }
+    /* the second voice answers the lead's call: on the bars where the lead rests, it plays the cadence of the theme a step lower */
+    function answerBar(sec, chord, pb) {
+      var out = []; if (!S.pal.ans || !sec.layers.ans || sec.lead !== "call" || (pb % 2) !== 1) return out;
+      var pcs = chordPcs(chord), mm = S.theme.m[pb === 1 ? 3 : 2], c = LEAD_CENTER[S.pal.ans] || 66, orig = placeInRange(S.root, c - 14, c - 3);
+      var v0 = BASE_VEL.lead * sec.dyn * .7, art = ARTIC[fam(S.pal.ans)] || .8, half = Math.max(2, Math.ceil(mm.on.length * .7));
+      for (var k = 0; k < half && k < mm.on.length; k++) {
+        var step = mm.on[k]; if (step > 12) break;
+        var deg = mm.deg[k] - 1; if (step % 4 === 0) deg = snapToChord(pcs, deg); deg = clamp(deg, -3, 14);
+        var nx = k < half - 1 ? mm.on[k + 1] : Math.min(16, step + 5);
+        out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + degSemi(S.mode, deg)), d: Math.max(1, Math.min(nx - step, 8) * art), v: v0 * (1 + (rng() - .5) * .1), p: 2, ans: 1 });
       }
       return out;
     }
@@ -527,9 +553,10 @@
         return out;
       }
       var hits = []; for (s = 0; s < 16; s++) if (pat.charAt(s) === "x") hits.push(s);
+      var strummed = fam(S.pal.comp) === "pluck", spread = strummed ? .14 : .055;
       for (var h = 0; h < hits.length; h++) {
-        var L = (h < hits.length - 1 ? hits[h + 1] : 16) - hits[h], d = Math.max(1, Math.min(L, 8) * art + (fam(S.pal.comp) === "keys" ? 1 : 0));
-        for (i = 0; i < v.length; i++) out.push({ s: hits[h] + i * 0.05, r: "comp", i: S.pal.comp, m: v[i], d: d, v: base * (hits[h] % 4 === 0 ? 1 : .8) * (1 + (rng() - .5) * .14), p: 2 });
+        var L = (h < hits.length - 1 ? hits[h + 1] : 16) - hits[h], d = Math.max(1, Math.min(L, 8) * art + (fam(S.pal.comp) === "keys" ? 1 : 0)), up = strummed && (h % 2 === 1);
+        for (i = 0; i < v.length; i++) { var ii = up ? v.length - 1 - i : i; out.push({ s: hits[h] + i * spread, r: "comp", i: S.pal.comp, m: v[ii], d: d, v: base * (hits[h] % 4 === 0 ? 1 : .8) * (up ? .88 : 1) * (1 + (rng() - .5) * .14), p: 2 }); }
       }
       return out;
     }
@@ -564,12 +591,15 @@
         return out;
       }
       var steps = []; for (var s = 0; s < 16; s++) if (pat.charAt(s) !== ".") steps.push(s);
+      var bp = S.pal.bass, glideOk = bp === "synthbass" || bp === "sub" || bp === "808", prevN = null;
       for (var j = 0; j < steps.length; j++) {
         var st = steps[j], ch = pat.charAt(st), note = rootM;
         if (ch === "5") note = rootM + 7; else if (ch === "o") note = rootM + 12;
         else if (ch === "a") note = lastOfChord ? (nextM > rootM ? nextM - 1 : nextM + 1) : rootM + 7;
         var len = (j < steps.length - 1 ? steps[j + 1] : 16) - st;
-        out.push({ s: st, r: "bass", i: S.pal.bass, m: note, d: Math.max(1, Math.min(len, max) * .92), v: vb * (j === 0 ? 1 : .82), p: 1 });
+        var evb = { s: st, r: "bass", i: S.pal.bass, m: note, d: Math.max(1, Math.min(len, max) * .92), v: vb * (j === 0 ? 1 : .82), p: 1 };
+        if (glideOk && prevN !== null && note !== prevN && Math.abs(note - prevN) <= (bp === "808" ? 7 : 5) && rng.chance(bp === "808" ? .22 : .1)) evb.gl = prevN - note;
+        out.push(evb); prevN = note;
       }
       return out;
     }
@@ -589,7 +619,7 @@
       }
       if (sec.tpl.crash && firstBar && level > 0) hit(0, "drums", "crash", .62 * dyn + .2);
       if (sec.tpl.riser && firstBar) out.push({ s: 0, r: "fx", k: "riser", d: sec.bars * 16, v: .5, p: 2 });
-      if ((sec.kind === "drop" || sec.kind === "climax") && firstBar && (S.styleName === "cinematic" || S.arcName === "story")) out.push({ s: 0, r: "fx", k: "impact", v: .8, p: 1 });
+      if ((sec.kind === "drop" || sec.kind === "climax") && firstBar) out.push({ s: 0, r: "fx", k: "impact", v: (S.styleName === "cinematic" || S.arcName === "story") ? .8 : .42, p: 1 });
       if (level <= 0) return out;
       var inBuild = level === 3;
       if (inBuild) {
@@ -607,9 +637,13 @@
       if (!light) { pattern(D.snare, "drums", "snare", .85); pattern(D.clap, "drums", "clap", .8); }
       if (!light || S.styleName === "lofi" || S.styleName === "acoustic") {
         pattern(D.hat, "perc", "hat", (light ? .45 : .6) * dyn + .12);
+        if (!light && (S.styleName === "lofi" || S.styleName === "rnb") && rng.chance(.14)) hit(rng.pick([3, 7, 11, 15]) + .5, "perc", "hat", .26);
         if (!light) pattern(D.open, "perc", "open", .5 * dyn + .1);
       }
-      if (D.rim) pattern(D.rim, "perc", "rim", .5 * dyn + .1);
+      if (D.rim) pattern(D.rim, "perc", "rim", D.rimV !== undefined ? D.rimV : .5 * dyn + .1);
+      /* ghost notes: very quiet snare taps between the backbeats give a played feel */
+      var GH = { lofi: [2, 7, 10, 15], rnb: [6, 7, 14, 15], afrobeats: [3, 10, 15], amapiano: [], acoustic: [] }[S.styleName];
+      if (!light && GH && D.snare) for (var gi = 0; gi < GH.length; gi++) if (D.snare.charAt(GH[gi]) === "." && rng.chance(.22 * (.6 + e))) hit(GH[gi], "drums", "snare", .15 + rng() * .1);
       if (D.shaker && (!light || e > .3)) pattern(D.shaker, "perc", "shaker", .46 * dyn + .1);
       if (!light && e > .5) { pattern(D.cLo, "perc", "conga", .6, null); if (D.cHi) pattern(D.cHi, "perc", "conga", .5, null); }
       if (D.tom && (!light || firstBar)) pattern(D.tom, "drums", "tom", .8, null);
@@ -659,9 +693,10 @@
       S.sec = {
         kind: tpl.k, tpl: tpl, bars: bars, loopLen: L, e: e, dyn: .55 + .45 * e, lead: tpl.lead, lift: !!tpl.lift, prog: prog,
         layers: { comp: tpl.k === "intro" ? rng.chance(.55) : tpl.k === "break" ? rng.chance(.8) : true, bass: !!tpl.bass && e >= .15, drums: dl, arp: rng.chance(tpl.arp * (.5 + e * .7)) },
-        compVar: rng.int(4), bassVar: rng.int(4), loop: 0
+        compVar: rng.int(4), bassVar: rng.int(4), loop: 0, ans: false
       };
       if (tpl.k === "intro" && S.style.drums === 2 && !S.sec.layers.comp) S.sec.layers.arp = true;
+      S.sec.layers.ans = !!S.pal.ans && rng.chance(.25 + .55 * e);
       S.secBar = 0; S.secNo++;
       S.secStartBarNo = S.barNo;
     }
@@ -680,7 +715,13 @@
         S.compV = voiceChord(S.mode, S.root, chord.degs, COMP_CENTER[S.pal.comp] || 62, S.compV, 14);
       }
       var lastBar = S.secBar === sec.bars - 1, ev = [];
-      ev = ev.concat(padBar(sec, chord, chordStart), bassBar(sec, chord, nextChord, cb), compBar(sec, chord, cb), leadBar(sec, chord, ci, cb), arpBar(sec), drumBar(sec, S.secBar === 0, lastBar));
+      ev = ev.concat(padBar(sec, chord, chordStart), bassBar(sec, chord, nextChord, cb), compBar(sec, chord, cb), leadBar(sec, chord, ci, cb), answerBar(sec, chord, S.secBar % 4), arpBar(sec), drumBar(sec, S.secBar === 0, lastBar));
+      /* transitions: the bar before a drop leaves a gap and a reversed cymbal pulls into it; a break opens with a falling sweep */
+      if (lastBar && sec.kind === "build") {
+        ev = ev.filter(function (e) { return !(e.s >= 14 && (e.r === "pad" || e.r === "comp" || e.r === "lead" || e.r === "arp" || e.r === "bass")); });
+        ev.push({ s: 8, r: "fx", k: "revcrash", d: 8, v: .55, p: 2 });
+      }
+      if (S.secBar === 0 && (sec.kind === "break" || sec.kind === "breath" || sec.kind === "bridge")) ev.push({ s: 0, r: "fx", k: "fall", d: 12, v: .4, p: 2 });
       ev.sort(function (a, b) { return a.s - b.s; });
       /* mix automation: filter opens through intros and builds, closes in breaks */
       var cut = 1, tpl = sec.tpl, prog = S.secBar / sec.bars;
@@ -691,7 +732,8 @@
       var human = S.styleName === "lofi" ? .85 : (S.styleName === "house" || S.styleName === "trap") ? .12 : .45;
       var bar = {
         idx: S.barNo, bpm: S.bpm, stepDur: 60 / S.bpm / 4, barDur: 60 / S.bpm * 4, swing: S.style.swing, human: human, events: ev,
-        mix: { cut: cut, wet: wet, duck: S.style.duck, delay: S.style.delay, tex: S.tex, grit: S.recipe.grit, bright: S.recipe.bright, space: S.recipe.space, level: S.style.level || 1 },
+        lay: S.style.lay || 0,
+        mix: { wobble: S.style.wobble || 0, cut: cut, wet: wet, duck: S.style.duck, delay: S.style.delay, tex: S.tex, grit: S.recipe.grit, bright: S.recipe.bright, space: S.recipe.space, level: S.style.level || 1 },
         kit: S.style.kit, sec: { kind: sec.kind, idx: S.secNo, bar: S.secBar, len: sec.bars, e: sec.e }, secStart: first, stage: S.stage, mood: spec.stages[S.stage].mood, style: S.styleName,
         key: { root: S.root, mode: S.mode }, palette: S.pal
       };
@@ -737,10 +779,10 @@
   };
   /* mixer strips: level, reverb send, delay send, how much the kick ducks them */
   var STRIPS = {
-    drums: { lvl: .46, rv: .05, dy: 0, duck: 0 }, hats: { lvl: .55, rv: .05, dy: 0, duck: 0 },
-    bass: { lvl: .3, rv: 0, dy: 0, duck: 1 }, pad: { lvl: .3, rv: .5, dy: 0, duck: 1 },
-    comp: { lvl: .32, rv: .26, dy: .1, duck: .8 }, lead: { lvl: .7, rv: .32, dy: .25, duck: 0 },
-    arp: { lvl: .5, rv: .38, dy: .3, duck: .6 }, tex: { lvl: .3, rv: 0, dy: 0, duck: 0 }, fx: { lvl: .5, rv: .3, dy: 0, duck: 0 }
+    drums: { lvl: .46, rv: .05, dy: 0, duck: 0, hp: 36, pk: [4500, 1.5, .8], cmp: [-18, 3, .012, .12] }, hats: { lvl: .55, rv: .05, dy: 0, duck: 0, hp: 450 },
+    bass: { lvl: .3, rv: 0, dy: 0, duck: 1, hp: 30, cmp: [-20, 3.5, .025, .16] }, pad: { lvl: .3, rv: .5, dy: 0, duck: 1, hp: 150, pk: [380, -2, .8] },
+    comp: { lvl: .32, rv: .26, dy: .1, duck: .8, hp: 130, pk: [320, -2, .8] }, lead: { lvl: .7, rv: .32, dy: .25, duck: 0, hp: 200, pk: [3200, 2, .9], cmp: [-22, 2.5, .02, .22] },
+    arp: { lvl: .5, rv: .38, dy: .3, duck: .6, hp: 280, pk: [6500, 1.5, .8] }, tex: { lvl: .3, rv: 0, dy: 0, duck: 0, hp: 80 }, fx: { lvl: .5, rv: .3, dy: 0, duck: 0, hp: 120 }
   };
   /* per-instrument loudness trim, measured so a middle C at the same velocity sounds equally loud for every instrument */
   var LOUD = { piano: .76, keys: .9, organ: .57, guitar: 1.1, pluck: 1.25, kalimba: 1.18, marimba: 1.28, bells: 1, strings: 1, pad: 1.05, choir: 1.2, flute: .35, brass: .59, sax: .33, violin: .32, synth: 1.15, sub: .6, "808": .65, synthbass: .5, log: 1.2 };
@@ -774,17 +816,43 @@
     tone.type = "lowpass"; tone.frequency.value = 16000; tone.Q.value = .6;
     glue.threshold.value = -18; glue.knee.value = 14; glue.ratio.value = 3; glue.attack.value = .012; glue.release.value = .22;
     lim.threshold.value = -1.5; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = .002; lim.release.value = .08;
-    trim.gain.value = opts.trim || .85;
+    trim.gain.value = opts.trim || .4;
     /* last line of defence: a soft clipper so the output can never exceed full scale, whatever the mix does */
     var clip = ctx.createWaveShaper(), cc = new Float32Array(2048);
     for (i = 0; i < 2048; i++) { var cx = i / 1023.5 - 1; cc[i] = Math.tanh(cx * 1.15) / Math.tanh(1.15) * .97; }
     clip.curve = cc;
-    premix.connect(hp); hp.connect(tone); tone.connect(glue); glue.connect(trim); trim.connect(lim); lim.connect(clip); clip.connect(E.out);
+    /* tape wow and flutter: a short delay whose time wobbles slowly; depth is set per bar (zero for most styles) */
+    var wow = ctx.createDelay(.05), wowLfo = ctx.createOscillator(), wowAmt = ctx.createGain();
+    wow.delayTime.value = .012; wowLfo.frequency.value = .55; wowAmt.gain.value = 0; wowLfo.connect(wowAmt); wowAmt.connect(wow.delayTime); wowLfo.start(0); E.wowAmt = wowAmt;
+    premix.connect(wow); wow.connect(hp); hp.connect(tone);
+    if (E.lite) {
+      /* lite mode skips the per-part compressors, so one wider master compressor brings it up to the same loudness as full quality */
+      var lc = ctx.createDynamicsCompressor(); lc.threshold.value = -34; lc.knee.value = 12; lc.ratio.value = 3.5; lc.attack.value = .01; lc.release.value = .18;
+      tone.connect(lc); lc.connect(glue);
+    }
+    else {
+      /* three-band compression (Linkwitz-Riley crossovers) so the bass cannot pump the highs, plus a touch of parallel tube-style warmth */
+      var biq = function (type, fc, from) { var a = ctx.createBiquadFilter(), b = ctx.createBiquadFilter(); a.type = b.type = type; a.frequency.value = b.frequency.value = fc; a.Q.value = b.Q.value = .7071; from.connect(a); a.connect(b); return b; };
+      var band = function (src, th, ra, at, rl) { var c = ctx.createDynamicsCompressor(); c.threshold.value = th; c.knee.value = 10; c.ratio.value = ra; c.attack.value = at; c.release.value = rl; src.connect(c); return c; };
+      var mh = biq("highpass", 150, tone), sumB = ctx.createGain();
+      band(biq("lowpass", 150, tone), -24, 2.5, .03, .25).connect(sumB);
+      band(biq("lowpass", 3800, mh), -22, 2.2, .015, .15).connect(sumB);
+      band(biq("highpass", 3800, mh), -26, 1.8, .004, .08).connect(sumB);
+      var wsh = ctx.createWaveShaper(), wc = new Float32Array(1024), whp = ctx.createBiquadFilter(), wlp = ctx.createBiquadFilter(), wg = ctx.createGain();
+      for (i = 0; i < 1024; i++) { var wx = i / 512 - 1; wc[i] = Math.tanh(wx * 2.4) * .8 + .03 * wx * wx; }
+      wsh.curve = wc; whp.type = "highpass"; whp.frequency.value = 180; wlp.type = "lowpass"; wlp.frequency.value = 5200; wg.gain.value = .07;
+      tone.connect(wsh); wsh.connect(whp); whp.connect(wlp); wlp.connect(wg); wg.connect(sumB);
+      sumB.connect(glue);
+    }
+    glue.connect(trim); trim.connect(lim); lim.connect(clip); clip.connect(E.out);
 
     /* reverb */
     var rvIn = ctx.createGain(), conv = ctx.createConvolver(), rvOut = ctx.createGain();
     conv.buffer = makeIR(ctx, E.lite ? 1.8 : 3.2, .9); rvOut.gain.value = .9;
-    rvIn.connect(conv); conv.connect(rvOut); rvOut.connect(premix);
+    /* the reverb return is pre-delayed and band-limited so it adds space without muddying the mix */
+    var rvPre = ctx.createDelay(.1), rvHp = ctx.createBiquadFilter(), rvLp = ctx.createBiquadFilter();
+    rvPre.delayTime.value = .018; rvHp.type = "highpass"; rvHp.frequency.value = 220; rvLp.type = "lowpass"; rvLp.frequency.value = 8000;
+    rvIn.connect(rvPre); rvPre.connect(conv); conv.connect(rvHp); rvHp.connect(rvLp); rvLp.connect(rvOut); rvOut.connect(premix);
     /* ping-pong delay (dotted eighth) */
     var dIn = ctx.createGain(), dl = ctx.createDelay(2), dr = ctx.createDelay(2), f1 = ctx.createGain(), f2 = ctx.createGain(), dlp = ctx.createBiquadFilter(), mg = ctx.createChannelMerger(2), dOut = ctx.createGain();
     dlp.type = "lowpass"; dlp.frequency.value = 3200; f1.gain.value = E.lite ? .25 : .36; f2.gain.value = E.lite ? .25 : .36; dOut.gain.value = .8;
@@ -797,7 +865,11 @@
       var c = STRIPS[name], inn = ctx.createGain(), lvl = ctx.createGain(), rv = ctx.createGain(), dy = ctx.createGain(), node = inn, dk = null;
       lvl.gain.value = c.lvl;
       if (c.duck > 0) { dk = ctx.createGain(); inn.connect(dk); node = dk; ducks.push({ g: dk, k: c.duck }); }
-      node.connect(lvl); lvl.connect(premix);
+      var last = node;
+      if (c.hp) { var hf = ctx.createBiquadFilter(); hf.type = "highpass"; hf.frequency.value = c.hp; hf.Q.value = .6; last.connect(hf); last = hf; }
+      if (c.pk) { var pf = ctx.createBiquadFilter(); pf.type = "peaking"; pf.frequency.value = c.pk[0]; pf.gain.value = c.pk[1]; pf.Q.value = c.pk[2] || .9; last.connect(pf); last = pf; }
+      if (c.cmp && !E.lite) { var cm = ctx.createDynamicsCompressor(); cm.threshold.value = c.cmp[0]; cm.ratio.value = c.cmp[1]; cm.attack.value = c.cmp[2]; cm.release.value = c.cmp[3]; cm.knee.value = 8; last.connect(cm); last = cm; }
+      last.connect(lvl); lvl.connect(premix);
       rv.gain.value = c.rv; dy.gain.value = c.dy;
       lvl.connect(rv); rv.connect(rvIn); lvl.connect(dy); dy.connect(dIn);
       E.strips[name] = { in: inn, lvl: lvl, rv: rv, dy: dy, cfg: c };
@@ -860,8 +932,12 @@
     E.playSample = function (buf, t, v, o) {
       var s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = buf; g.gain.value = v; s.connect(g); g.connect(o); s.start(t);
     };
+    /* curGl: slide in from this many semitones away; curDet: a few cents of natural pitch wander per note. Both are set around each note. */
+    E.curGl = 0; E.curDet = 0;
     E.osc = function (type, f, t, t1, detune) {
-      var o = ctx.createOscillator(); o.type = type; o.frequency.value = f; if (detune) o.detune.value = detune; o.start(t); o.stop(t1); return o;
+      var o = ctx.createOscillator(); o.type = type;
+      if (E.curGl) { o.frequency.setValueAtTime(f * Math.pow(2, E.curGl / 12), t); o.frequency.exponentialRampToValueAtTime(f, t + .07); } else o.frequency.value = f;
+      var dt = (detune || 0) + E.curDet; if (dt) o.detune.value = dt; o.start(t); o.stop(t1); return o;
     };
 
     /* gritty bass path (anger): voices go through a soft clipper */
@@ -996,7 +1072,7 @@
       g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.55 * v, t + .05); g.gain.setValueAtTime(.55 * v, t + hold * .85); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .18);
       var a = E.osc("sawtooth", f, t, end, 0), b = E.osc("square", f, t, end, 6), bg = ctx.createGain(); bg.gain.value = .35;
       /* reed scoop: pitch rises into the note */
-      [a, b].forEach(function (os) { os.frequency.setValueAtTime(f * .965, t); os.frequency.exponentialRampToValueAtTime(f, t + .045); lateVib(E, os, t, 2.4, .22); });
+      [a, b].forEach(function (os) { if (!E.curGl) { os.frequency.setValueAtTime(f * .965, t); os.frequency.exponentialRampToValueAtTime(f, t + .045); } lateVib(E, os, t, 2.4, .22); });
       a.connect(lp); b.connect(bg); bg.connect(lp); lp.connect(hon); hon.connect(body); body.connect(g); g.connect(o);
       E.noise(t, hold + .1, "bandpass", Math.min(6000, f * 4 + 800), 1.4, .05 * v, hold + .1, o);
     };
@@ -1027,7 +1103,8 @@
     };
     INST["808"] = function (E, f, t, d, v, o) {
       var dur = clamp(d * 1.25, .5, 2.4), end = t + dur, os = ctx.createOscillator(), g = ctx.createGain(), h = ctx.createOscillator(), hg = ctx.createGain();
-      os.type = "sine"; os.frequency.setValueAtTime(f * 2.2, t); os.frequency.exponentialRampToValueAtTime(f, t + .05);
+      os.type = "sine";
+      if (E.curGl) { os.frequency.setValueAtTime(f * Math.pow(2, E.curGl / 12), t); os.frequency.exponentialRampToValueAtTime(f, t + .11); } else { os.frequency.setValueAtTime(f * 2.2, t); os.frequency.exponentialRampToValueAtTime(f, t + .05); }
       g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.95 * v, t + .004); g.gain.exponentialRampToValueAtTime(.5 * v, t + dur * .45); g.gain.exponentialRampToValueAtTime(.0001, end);
       h.type = "triangle"; h.frequency.value = f * 2; hg.gain.setValueAtTime(.22 * v, t); hg.gain.exponentialRampToValueAtTime(.0001, t + dur * .45);
       var sh = ctx.createWaveShaper(), shg = ctx.createGain(); sh.curve = satCurve; shg.gain.value = .16;
@@ -1074,6 +1151,16 @@
         s.buffer = noiseBuf; s.loop = true; bp.type = "bandpass"; bp.Q.value = 1.4; bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(9000, t + dur);
         g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.5 * ev.v, t + dur * .97); g.gain.linearRampToValueAtTime(0, t + dur);
         s.connect(bp); bp.connect(g); g.connect(o); s.start(t, Math.random()); s.stop(t + dur + .05);
+      } else if (ev.k === "revcrash") {
+        var rd = Math.min(4, ev.d * bar.stepDur), s2 = ctx.createBufferSource(), hp2 = ctx.createBiquadFilter(), g2 = ctx.createGain();
+        s2.buffer = noiseBuf; s2.loop = true; hp2.type = "highpass"; hp2.frequency.setValueAtTime(1200, t); hp2.frequency.exponentialRampToValueAtTime(6500, t + rd);
+        g2.gain.setValueAtTime(.0001, t); g2.gain.exponentialRampToValueAtTime(.6 * ev.v, t + rd * .96); g2.gain.linearRampToValueAtTime(0, t + rd + .03);
+        s2.connect(hp2); hp2.connect(g2); g2.connect(o); s2.start(t, Math.random()); s2.stop(t + rd + .1);
+      } else if (ev.k === "fall") {
+        var fd = Math.min(3, ev.d * bar.stepDur), s3 = ctx.createBufferSource(), bp3 = ctx.createBiquadFilter(), g3 = ctx.createGain();
+        s3.buffer = noiseBuf; s3.loop = true; bp3.type = "bandpass"; bp3.Q.value = 1.1; bp3.frequency.setValueAtTime(7000, t); bp3.frequency.exponentialRampToValueAtTime(380, t + fd);
+        g3.gain.setValueAtTime(.35 * ev.v, t); g3.gain.exponentialRampToValueAtTime(.0001, t + fd);
+        s3.connect(bp3); bp3.connect(g3); g3.connect(o); s3.start(t, Math.random()); s3.stop(t + fd + .05);
       } else if (ev.k === "impact") {
         E.tone(t, "sine", 62, 30, .6, .9 * ev.v, 1.8, o); E.noise(t, 1.4, "lowpass", 500, .7, .5 * ev.v, 1.2, o);
       }
@@ -1083,6 +1170,8 @@
     E.setMix = function (mix, t, bar) {
       var tc = Math.max(.05, bar.barDur / 3), maxCut = 5500 + mix.bright * 12500;
       E.bright = mix.bright; E.grit = mix.grit || 0; E.duckDepth = mix.duck || 0;
+      E.wowAmt.gain.setTargetAtTime(mix.wobble || 0, t, .6);
+      trim.gain.setTargetAtTime((opts.trim || .4) * (mix.level || 1), t, .8);
       tone.frequency.setTargetAtTime(300 * Math.pow(maxCut / 300, clamp(mix.cut, 0, 1)), t, tc);
       var beat = 60 / bar.bpm; dl.delayTime.setTargetAtTime(beat * .75, t, .05); dr.delayTime.setTargetAtTime(beat * .75, t, .05);
       Object.keys(E.strips).forEach(function (n) {
@@ -1109,21 +1198,26 @@
       var name = ev.i, fn = INST[name]; if (!fn) return;
       var sec = ev.d * bar.stepDur, o = ev.r === "bass" ? E.bassOut() : E.strips[ROLE_STRIP[ev.r]].in;
       if (!E.admit(ev, t, COST[name] || 2, sec + .3)) return;
-      if (ev.pan && ctx.createStereoPanner) { var pn = ctx.createStereoPanner(); pn.pan.value = clamp(ev.pan, -1, 1); pn.connect(o); o = pn; }
-      fn(E, mtof(ev.m), t, sec, clamp(ev.v, .02, 1.2) * (LOUD[name] || 1), o);
+      var pv = ev.pan !== undefined ? ev.pan : (E.lite ? 0 : ev.r === "pad" ? ((ev.m % 5) - 2) * .15 : ev.r === "comp" ? ((ev.m % 3) - 1) * .16 : (ev.r === "lead" && ev.ans) ? -.28 : 0);
+      if (pv && ctx.createStereoPanner) { var pn = ctx.createStereoPanner(); pn.pan.value = clamp(pv, -1, 1); pn.connect(o); o = pn; }
+      E.curGl = ev.gl || 0; E.curDet = (Math.random() - .5) * 6;
+      try { fn(E, mtof(ev.m), t, sec, clamp(ev.v, .02, 1.2) * (LOUD[name] || 1), o); } finally { E.curGl = 0; E.curDet = 0; }
     };
     function stepTime(s, bar) {
       var base = s * bar.stepDur, r = Math.round(s);
       if (bar.swing > 0 && r % 2 === 1 && Math.abs(s - r) < .2) base += bar.swing * .333 * bar.stepDur;
       return base;
     }
+    /* where each part sits against the grid (seconds, scaled by the style's "lay-back"): kick pushes, snare and lead lean back */
+    var LAY = { kick: -.004, snare: .012, clap: .012, hat: .002, open: .002, bass: .006, lead: .014, comp: .008, arp: .004 }, drift = 0;
     E.playBar = function (bar, t0) {
       E.setMix(bar.mix, t0, bar);
+      drift = drift * .7 + (Math.random() - .5) * .008 * (bar.human || 0);
       for (var k = 0; k < bar.events.length; k++) {
         var ev = bar.events[k], key = ev.r === "perc" ? "hats" : ev.r === "drums" ? "drums" : ev.r;
         if (solo && key !== solo) continue;
         if (muted.indexOf(key) >= 0) continue;
-        var t = t0 + stepTime(ev.s, bar);
+        var t = t0 + stepTime(ev.s, bar) + drift + (LAY[(ev.r === "drums" || ev.r === "perc") ? ev.k : ev.r] || 0) * (bar.lay || 0);
         if (bar.human > 0) t += (Math.random() - .5) * (ev.r === "drums" || ev.r === "perc" ? .006 : .014) * bar.human;
         if (t < t0) t = t0;
         if (ev.r === "drums" || ev.r === "perc") E.drum(ev, t, bar);
