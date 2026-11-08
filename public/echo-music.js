@@ -375,7 +375,9 @@
     var rng = makeRng(seed);
     var S = { barNo: 0, stage: -1, stageStart: 0, mode: spec.mode, root: spec.root, bpm: 90, bpmTarget: 90, arcName: "groove", arcIdx: 0, sec: null, secBar: 0, secNo: 0,
               padV: null, compV: null, theme: null, progA: null, progB: null, cycle: 0, bias: spec.energyBias, steer: null,
-              pal: null, style: null, styleName: "", recipe: null, tex: null };
+              pal: null, style: null, styleName: "", recipe: null, tex: null, mask: {} };
+    var LAYER_KEYS = { drums: "drums", percussion: "drums", perc: "drums", beat: "drums", bass: "bass", bassline: "bass", pad: "pad", pads: "pad", strings: "pad", atmosphere: "pad", comp: "comp", chords: "comp", harmony: "comp", lead: "lead", melody: "lead", arp: "arp", arpeggio: "arp", sparkle: "arp", fx: "fx", effects: "fx" };
+    var ROLES_SET = { pad: 1, comp: 1, lead: 1, arp: 1, bass: 1 };
 
     function chooseArc(style, recipe) {
       if (style.arc === "groove") return "groove";
@@ -721,6 +723,8 @@
         ev = ev.filter(function (e) { return !(e.s >= 14 && (e.r === "pad" || e.r === "comp" || e.r === "lead" || e.r === "arp" || e.r === "bass")); });
         ev.push({ s: 8, r: "fx", k: "revcrash", d: 8, v: .55, p: 2 });
       }
+      var mk = S.mask, hasMask = false; for (var mq in mk) if (mk[mq] === false) hasMask = true;
+      if (hasMask) ev = ev.filter(function (e) { return mk[(e.r === "drums" || e.r === "perc") ? "drums" : e.r] !== false; });
       if (S.secBar === 0 && (sec.kind === "break" || sec.kind === "breath" || sec.kind === "bridge")) ev.push({ s: 0, r: "fx", k: "fall", d: 12, v: .4, p: 2 });
       ev.sort(function (a, b) { return a.s - b.s; });
       /* mix automation: filter opens through intros and builds, closes in breaks */
@@ -753,6 +757,15 @@
         }
       }
       if (typeof p.bpm === "number" && isFinite(p.bpm)) S.bpmTarget = clamp(S.bpmTarget + clamp(p.bpm, -30, 30), 50, 150);
+      if (typeof p.tempo === "number" && isFinite(p.tempo)) S.bpmTarget = clamp(p.tempo, 50, 150);
+      /* switch whole parts off or on ("no drums", "bring the bass back") */
+      if (p.reset) S.mask = {};
+      if (p.layers && typeof p.layers === "object") for (var lk in p.layers) { var key = LAYER_KEYS[String(lk).toLowerCase()]; if (!key) continue; var on = !(p.layers[lk] === false || p.layers[lk] === "off" || p.layers[lk] === 0); if (on) delete S.mask[key]; else S.mask[key] = false; }
+      /* swap the instrument a part uses ("play the lead on piano"); it sticks across sections */
+      if (p.instrument && typeof p.instrument === "object") for (var rk in p.instrument) {
+        var role = LAYER_KEYS[String(rk).toLowerCase()] || rk, nm = String(p.instrument[rk]).toLowerCase().replace("saxophone", "sax").replace("keyboard", "keys").replace("electric piano", "keys").replace("string", "strings").replace("stringss", "strings");
+        if (ROLES_SET[role] && (INSTR_META[nm] || (role === "bass" && BASS_LOW[nm]))) { S.pal[role] = nm; spec.forced = spec.forced || {}; spec.forced[role] = nm; }
+      }
       if ((p.mood && RECIPES[p.mood]) || (p.style && STYLES[p.style])) {
         S.steer = { mood: RECIPES[p.mood] ? p.mood : null, style: STYLES[p.style] ? p.style : null };
         if (S.sec) S.sec.bars = S.secBar;
@@ -760,7 +773,7 @@
     }
     function info() {
       return { seed: seed, title: spec.title, mood: spec.stages[Math.max(0, S.stage)].mood, journey: spec.stages.map(function (s) { return s.mood; }), intent: spec.intent,
-               style: S.styleName, styleName: S.style ? S.style.name : "", bpm: Math.round(S.bpm), key: NOTE_NAMES[S.root] + " " + MODE_LABEL[S.mode], palette: S.pal, section: S.sec ? S.sec.kind : "", bar: S.barNo };
+               style: S.styleName, styleName: S.style ? S.style.name : "", bpm: Math.round(S.bpm), key: NOTE_NAMES[S.root] + " " + MODE_LABEL[S.mode], palette: S.pal, section: S.sec ? S.sec.kind : "", bar: S.barNo, muted: Object.keys(S.mask).filter(function (k) { return S.mask[k] === false; }) };
     }
     return { spec: spec, seed: seed, nextBar: nextBar, steer: steer, info: info };
   }
@@ -1296,7 +1309,7 @@
   function seedStr(pc) { return seedToStr(pc.seed); }
   function info() {
     var pc = P.piece, i = pc ? pc.comp.info() : {};
-    i.quality = P.quality; i.playing = !!pc && !P.paused; i.paused = P.paused; i.active = !!pc; i.ducked = P.ducked; i.held = P.held; i.volume = P.vol;
+    i.sleepMin = P.sleepAt ? Math.max(0, Math.round((P.sleepAt - Date.now()) / 60000)) : 0; i.quality = P.quality; i.playing = !!pc && !P.paused; i.paused = P.paused; i.active = !!pc; i.ducked = P.ducked; i.held = P.held; i.volume = P.vol;
     if (pc) { i.seedStr = seedStr(pc); i.elapsed = P.ctx ? Math.max(0, P.ctx.currentTime - pc.start) : 0; }
     return i;
   }
@@ -1349,17 +1362,29 @@
     try { global.navigator.mediaSession.playbackState = "playing"; } catch (e) {}
     emit("resume", { info: info() });
   }
+  /* sleep timer: after the given minutes the music fades out and stops; sleep(0) cancels it */
+  function sleep(min) {
+    if (P.sleepT) { clearTimeout(P.sleepT); P.sleepT = null; } P.sleepAt = 0;
+    min = Number(min); if (!(min > 0)) { emit("sleep", { info: info() }); return 0; }
+    min = Math.min(min, 600); P.sleepAt = Date.now() + min * 60000;
+    P.sleepT = setTimeout(function () {
+      P.sleepT = null; P.sleepAt = 0; if (!P.piece || !P.ctx) return;
+      var c = P.ctx; P.volG.gain.cancelScheduledValues(c.currentTime); P.volG.gain.setTargetAtTime(0, c.currentTime, 4);
+      setTimeout(function () { stop(); try { P.volG.gain.cancelScheduledValues(0); P.volG.gain.setValueAtTime(P.vol, P.ctx.currentTime + 1.6); } catch (e) {} }, 14000);
+    }, min * 60000);
+    emit("sleep", { info: info() }); return min;
+  }
   function toggle() { if (!P.piece) return false; if (P.paused) resume(); else pause(); return !P.paused; }
   function stop() {
     var pc = P.piece; if (!pc) return;
-    P.piece = null; P.paused = false; stopTimer();
+    P.piece = null; P.paused = false; stopTimer(); if (P.sleepT) { clearTimeout(P.sleepT); P.sleepT = null; P.sleepAt = 0; }
     var c = P.ctx; if (c) { pc.eng.fadeOut(c.currentTime, 1.2); setTimeout(function () { pc.eng.dispose(); }, 1400); try { if (c.state === "suspended") c.resume(); } catch (e) {} }
     try { global.navigator.mediaSession.playbackState = "none"; } catch (e) {}
     emit("stop", {});
   }
-  function setVolume(v) {
+  function setVolume(v, secs) {
     P.vol = clamp(v, 0, 1); try { global.localStorage.setItem(VOL_KEY, String(P.vol)); } catch (e) {}
-    if (P.ctx) P.volG.gain.setTargetAtTime(P.vol, P.ctx.currentTime, .08);
+    if (P.ctx) P.volG.gain.setTargetAtTime(P.vol, P.ctx.currentTime, secs ? secs / 3 : .08);
   }
   /* Echo is speaking: music steps back, then returns */
   function duck(on) { P.ducked = !!on; if (P.ctx) P.duckG.gain.setTargetAtTime(on ? .2 : 1, P.ctx.currentTime, on ? .15 : .9); }
@@ -1407,7 +1432,7 @@
 
   var API = {
     version: 1, supported: function () { return !!AC; },
-    unlock: unlock, play: play, next: next, pause: pause, resume: resume, toggle: toggle, stop: stop,
+    unlock: unlock, play: play, next: next, pause: pause, resume: resume, toggle: toggle, stop: stop, sleep: sleep,
     setVolume: setVolume, getVolume: function () { return P.vol; }, duck: duck, hold: hold, steer: steer,
     current: function () { var pc = P.piece; if (!pc || !P.lastBrief) return null; var b = {}; for (var k in P.lastBrief) b[k] = P.lastBrief[k]; b.seed = pc.seed; return b; },
     like: like, saved: saved, playSaved: playSaved, tasteSummary: tasteSummary, info: info, level: level,
