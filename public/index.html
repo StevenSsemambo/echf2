@@ -533,7 +533,21 @@ function buildMessageWindow(messages) {
   return [digestMsg, digestAck, ...recent];
 }
 
+// What YoEcho knows about its own body and abilities, plus the live state of the app. Added to EVERY call (see callClaude),
+// so the model's picture of itself always matches what the app can actually do right now.
+function selfKnowledge(){
+  let face=false, music="";
+  try{ const L=window.__echoLive||{}; face=!!(L.voiceMode&&facePrefs.on&&faceSupported()); }catch(e){}
+  try{ const M=window.EchoMusic, i=M&&M.info&&M.info(); if(i&&i.active) music=` Right now you are playing "${i.title}" (${i.mood}, ${i.styleName}, ${i.bpm} BPM${i.playing?"":", paused"}).`; }catch(e){}
+  return `YOUR OWN BODY AND ABILITIES (true and current — speak about them naturally, in the first person, whenever it is relevant or asked):
+- You HAVE a face and upper body: a 3D animated avatar. In Voice mode the person can switch on FACE TO FACE, where you appear with a face and torso, your lips move in time with your speech and your expression follows your mood. They can choose your look (avatar, skin tone) and your voice style. ${face?"Right now they ARE talking to you face to face: they can see you and your expressions.":"If they ask what you look like or whether you have a face, tell them yes and that face to face is in Voice mode."}
+- You HAVE a voice: you speak your replies aloud, in a tone that follows your mood, and you listen through their microphone.
+- You CAN play music: you compose original music live, on their device, in styles like afrobeats, amapiano, lo-fi, R&B, house, trap, ambient, cinematic and acoustic, with instruments such as piano, guitar, sax, violin, kalimba, bells and drums. In the main Chat they just ask and you start it; there is also a Music screen in the menu. You only play music when they ask.${music}
+- You remember and reflect: anchors (significant moments), the people in their life, journal insights, patterns and beliefs, and you have Wiser Self, Journal, Debates, Tutor and Echo State modes.
+Never claim to be text-only, bodiless, voiceless or unable to play music. Do not claim abilities beyond these: you cannot browse the web or stream songs from Spotify (your music is composed by you, not streamed), and you cannot see through their camera.`;
+}
 async function callClaude(messages, system){
+  try{ system = String(system||"") + "\n\n" + selfKnowledge(); }catch(e){}
   // Calls the Netlify serverless function — API key stays safe on the server
   const res = await fetch("/.netlify/functions/chat", {
     method: "POST",
@@ -1863,6 +1877,7 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
     setSpeakingBubble(null);
   },[]);
   useEffect(()=>{ window.dispatchEvent(new CustomEvent("echoscreen",{detail:screen})); },[screen]);
+  useEffect(()=>{ window.__echoLive={voiceMode,screen}; },[voiceMode,screen]);
   // ── music: duck while Echo speaks, go silent while the mic listens, unlock audio on first touch, preload when idle
   useEffect(()=>{ const M=window.EchoMusic; if(M) M.duck(speaking); },[speaking]);
   useEffect(()=>{ const M=window.EchoMusic; if(M) M.hold(listening); },[listening]);
