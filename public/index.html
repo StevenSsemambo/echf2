@@ -315,7 +315,7 @@ function speakText(text, mood="neutral", onStart, onEnd, speedMult=1.0) {
 
   if (_resumeHack) { clearInterval(_resumeHack); _resumeHack = null; }
 
-  const chunks = chunkText(text);
+  const chunks = chunkText(scrubSpeech(text));
   if (!chunks.length) { onEnd?.(); return; }
 
   const tunes = {
@@ -472,7 +472,34 @@ function startRecognitionSync(onInterim, onFinal, onError) {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 const parseMood  = t=>{ const x=t.match(/^MOOD:(\w+)/m); return x&&MOODS[x[1]]?x[1]:null; };
-const stripMood  = t=>t.replace(/^MOOD:\w+\n?/m,"").replace(/\nPROFILE_UPDATE:.*$/m,"").trim();
+// Removes every machine tag (PROFILE_UPDATE, RELATIONSHIP_UPDATE, ANCHOR, MUSIC, JOURNAL_INSIGHT) wherever the model put it:
+// same line or new line, one-line or multi-line JSON, nested braces, even a reply cut off in the middle of the JSON.
+function stripTagBlocks(t){
+  let s=String(t||""), guard=0;
+  const re=/\b(?:PROFILE_UPDATE|RELATIONSHIP_UPDATE|ANCHOR|MUSIC|JOURNAL_INSIGHT)\s*:\s*/;
+  // models sometimes write the tag in another case or with a space ("Profile update: {...}"): only when JSON follows
+  const re2=/\b(?:profile|relationship|journal)[_ ]?(?:update|insight)\s*:\s*(?=\{)/i;
+  while(guard++<12){
+    const m1=s.match(re), m2=s.match(re2), m=(m1&&m2)?(m1.index<=m2.index?m1:m2):(m1||m2); if(!m) break;
+    const start=m.index, after=start+m[0].length; let end=after;
+    if(s[after]==="{"){
+      let depth=0,inStr=false,esc=false,i=after;
+      for(;i<s.length;i++){
+        const c=s[i];
+        if(inStr){ if(esc) esc=false; else if(c==="\\") esc=true; else if(c==='"') inStr=false; continue; }
+        if(c==='"') inStr=true; else if(c==="{") depth++; else if(c==="}"){ depth--; if(depth===0){ i++; break; } }
+      }
+      end=i;
+    } else { const nl=s.indexOf("\n",after); end=nl<0?s.length:nl; }
+    s=s.slice(0,start)+s.slice(end);
+  }
+  return s;
+}
+const stripMood  = t=>stripTagBlocks(String(t||"").replace(/^\s*MOOD\s*:\s*\w+[ \t]*\n?/mi,"")).replace(/\[music (?:now playing|started|stopped)[^\]]*\]/gi,"").replace(/\n{3,}/g,"\n\n").trim();
+// Last line of defence before speech: nothing that looks like a tag, JSON or a brace is ever read aloud.
+function scrubSpeech(t){
+  return stripTagBlocks(String(t||"")).replace(/\[music[^\]]*\]/gi," ").replace(/\bMOOD\s*:\s*\w+/g," ").replace(/"[A-Za-z_]+"\s*:/g," ").replace(/[{}]/g," ").replace(/[ \t]{2,}/g," ").trim();
+}
 function extractPU(raw){ try{ const m=raw.match(/PROFILE_UPDATE:(\{[^}]*\})/); if(m) return JSON.parse(m[1]); }catch(e){} return null; }
 // inferBeliefs now delegates to scoreBeliefs
 function inferBeliefs(msgs, storedHits = {}) { return scoreBeliefs(msgs, storedHits); }
