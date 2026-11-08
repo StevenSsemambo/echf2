@@ -190,4 +190,6 @@ public/
 - Ask in chat ("play me something calm", "another one", "more energy", "stop the music") or open **Music** from the menu / the ♫ button.
 - The music ducks while Echo speaks and goes silent while the mic is listening.
 - Chat music cards are not saved with the chat history (the music itself is regenerable from a seed).
+- **DJ mixes**: ask for "a 30 minute afrobeats mix" or "a chill DJ set". Tracks are planned so tempos stay close, each handover is beat-matched and phrase-aligned, moves to a related key, swaps the bass (high-pass sweep) and uses risers/impacts. Console: `EchoMusic.mix({styles:["afrobeats","amapiano","house"],minutes:20,shape:"build",trans:"blend"})`, `EchoMusic.mixNext()`, `EchoMusic.renderMix(opts, seconds)` (offline).
+- **Solo performances**: ask for "solo piano" or "a sax solo". Piano, keys, guitar, kalimba, marimba and bells play melody, chords and bass themselves; sax, violin, flute and brass play an expressive single line over a faint bed. No drums, wider room, natural rubato. Console: `EchoMusic.play({solo:"violin",mood:"love"})`.
 - Console API for tuning: `EchoMusic.play({mood:"joy",style:"afrobeats"})`, `EchoMusic.exportWav(brief, seconds)`.

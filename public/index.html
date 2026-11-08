@@ -552,11 +552,11 @@ function buildMessageWindow(messages) {
 function selfKnowledge(){
   let face=false, music="";
   try{ const L=window.__echoLive||{}; face=!!(L.voiceMode&&facePrefs.on&&faceSupported()); }catch(e){}
-  try{ const M=window.EchoMusic, i=M&&M.info&&M.info(); if(i&&i.active) music=` Right now you are playing "${i.title}" (${i.mood}, ${i.styleName}, ${i.bpm} BPM${i.playing?"":", paused"}), volume ${Math.round((i.volume==null?.8:i.volume)*100)}%, lead instrument ${i.palette&&i.palette.lead||"?"}${i.muted&&i.muted.length?", parts switched off: "+i.muted.join(", "):""}${i.sleepMin?", sleep timer "+i.sleepMin+" min":""}. You control all of this: volume, pause, stopping, new pieces, tempo, energy, mood, style, which parts play and which instruments play them, a sleep timer, and saving liked pieces.`; }catch(e){}
+  try{ const M=window.EchoMusic, i=M&&M.info&&M.info(); if(i&&i.active) music=` Right now you are playing "${i.title}" (${i.mood}, ${i.styleName}, ${i.bpm} BPM${i.playing?"":", paused"}), volume ${Math.round((i.volume==null?.8:i.volume)*100)}%, lead instrument ${i.palette&&i.palette.lead||"?"}${i.muted&&i.muted.length?", parts switched off: "+i.muted.join(", "):""}${i.sleepMin?", sleep timer "+i.sleepMin+" min":""}. You can also play DJ mixes (beat-matched sets that flow track into track) and solo performances by a single instrument. You control all of this: volume, pause, stopping, new pieces, tempo, energy, mood, style, which parts play and which instruments play them, a sleep timer, and saving liked pieces.`; }catch(e){}
   return `YOUR OWN BODY AND ABILITIES (true and current — speak about them naturally, in the first person, whenever it is relevant or asked):
 - You HAVE a face and upper body: a 3D animated avatar. In Voice mode the person can switch on FACE TO FACE, where you appear with a face and torso, your lips move in time with your speech and your expression follows your mood. They can choose your look (avatar, skin tone) and your voice style. ${face?"Right now they ARE talking to you face to face: they can see you and your expressions.":"If they ask what you look like or whether you have a face, tell them yes and that face to face is in Voice mode."}
 - You HAVE a voice: you speak your replies aloud, in a tone that follows your mood, and you listen through their microphone.
-- You CAN play music: you compose original music live, on their device, in styles like afrobeats, amapiano, lo-fi, R&B, house, trap, ambient, cinematic and acoustic, with instruments such as piano, guitar, sax, violin, kalimba, bells and drums. In the main Chat they just ask and you start it; there is also a Music screen in the menu. You only play music when they ask.${music}
+- You CAN play music: you compose original music live, on their device, in styles like afrobeats, amapiano, lo-fi, R&B, house, trap, ambient, cinematic and acoustic, with instruments such as piano, guitar, sax, violin, kalimba, bells and drums; you can also do DJ mixes and solo instrument performances. In the main Chat they just ask and you start it; there is also a Music screen in the menu. You only play music when they ask.${music}
 - You remember and reflect: anchors (significant moments), the people in their life, journal insights, patterns and beliefs, and you have Wiser Self, Journal, Debates, Tutor and Echo State modes.
 Never claim to be text-only, bodiless, voiceless or unable to play music. Do not claim abilities beyond these: you cannot browse the web or stream songs from Spotify (your music is composed by you, not streamed), and you cannot see through their camera.`;
 }
@@ -697,7 +697,7 @@ function loadEchoMusic(){
   if(_musicPromise) return _musicPromise;
   _musicPromise=new Promise((res,rej)=>{
     const el=document.createElement("script");
-    el.src="/echo-music.js?v=4"; el.async=true;
+    el.src="/echo-music.js?v=6"; el.async=true;
     el.onload=()=>{ if(window.EchoMusic){ window.dispatchEvent(new Event("echomusic-ready")); res(window.EchoMusic); } else rej(new Error("music engine missing")); };
     el.onerror=()=>rej(new Error("could not load the music engine"));
     document.head.appendChild(el);
@@ -744,6 +744,20 @@ function sniffMusic(text,active){
   }
   if(/\b(next|another|different|skip|change)\b[^.!?]{0,15}\b(song|track|music|one|beat|vibe)\b/.test(t)&&!/\b(my|the) (day|mind|life)\b/.test(t)&&active) return {cmd:"next"};
   if(/\bplay\b[^.!?]{0,15}\b(my )?(liked|saved|favou?rite)\b/.test(t)) return {cmd:"saved"};
+  // DJ mix: "play me a DJ mix", "a 30 minute afrobeats mix", "non-stop party set"
+  if(/\b(dj (mix|set)|mixtape|non-?stop|(?:a|an|the|me|some|your|\d+[- ]?(?:min\w*|hours?|hrs?)) (?:[a-z-]+ ){0,3}(?:mix|dj set))\b/.test(t)&&/\b(play|put on|give|make|start|i (want|need|wanna)|can you|do|spin|let'?s have|let me hear)\b/.test(t)){
+    const c={cmd:"mix",styles:[]};
+    for(const [id,nm] of MUSIC_STYLES){ if(t.includes(nm.toLowerCase())||t.includes(id)||(id==="lofi"&&/\b(chill|study|lo ?fi)\b/.test(t))) c.styles.push(id); }
+    if(/\b(party|club|dance|gym|workout|hype)\b/.test(t)&&!c.styles.length) c.styles=["afrobeats","amapiano","house"];
+    if(/\b(chill|relax|sleep|study|calm)\b/.test(t)&&!c.styles.length) c.styles=["lofi","rnb","acoustic","ambient"];
+    if(/\b(chill|relax|sleep|study|calm)\b/.test(t)) c.shape="chill"; else if(/\b(build|warm ?up|start slow)\b/.test(t)) c.shape="warmup"; else if(/\b(party|club|hype|workout|gym|peak)\b/.test(t)) c.shape="peak";
+    const mm=t.match(/(\d{1,3})[- ]?(min\w*|hours?|hrs?)/); if(mm) c.minutes=/h/.test(mm[2])?Number(mm[1])*60:Number(mm[1]);
+    if(!c.styles.length) delete c.styles;
+    return c;
+  }
+  // solo performance: "solo piano", "a sax solo", "just guitar on its own"
+  { const si=t.match(/\b(?:solo\s+(piano|keys|keyboard|guitar|sax|saxophone|violin|flute|kalimba|bells|marimba|brass|trumpet)|(piano|keys|keyboard|guitar|sax|saxophone|violin|flute|kalimba|bells|marimba|brass|trumpet)\s+(?:solo|performance|recital|alone)|(?:just|only)\s+(?:a |the )?(piano|guitar|sax|saxophone|violin|flute|kalimba|marimba)\b)/);
+    if(si&&/\b(play|put on|give|make|start|i (want|need|wanna)|can you|perform|let me hear|hear)\b/.test(t)){ const nm=si[1]||si[2]||si[3]; return {cmd:"play",solo:MUSIC_INSTR[nm]||nm}; } }
   if(/\b(play|put on|start|make|compose|give me|i (want|need|wanna|would like)|can you play)\b[^.!?]{0,40}\b(music|song|beat|tune|something to (listen|vibe|relax|dance))\b|\bmusic (please|for me)\b|\bplay (me )?something\b/.test(t)){
     const c={mood:null};
     for(const [id,nm] of MUSIC_STYLES){ if(t.includes(nm.toLowerCase())||t.includes(id)||(id==="lofi"&&/\b(chill|study)\b/.test(t))){ c.style=id; break; } }
@@ -776,6 +790,16 @@ async function runMusic(cmd,curMood){
     if(!M.saved().length) return {error:"You haven't liked any pieces yet — tell me to save one while it plays."};
     const i=M.playSaved(Math.max(0,(Number(cmd.n)||1)-1)); return i?{info:i,brief:M.current()}:{error:"I couldn't find that piece."};
   }
+  if(c==="mix"){
+    const o={}; if(Array.isArray(cmd.styles)&&cmd.styles.length) o.styles=cmd.styles.filter(x=>typeof x==="string").slice(0,6);
+    if(Array.isArray(cmd.moods)&&cmd.moods.length) o.moods=cmd.moods.filter(x=>MUSIC_MOODS.includes(x)).slice(0,6);
+    if(Number(cmd.minutes)>0) o.minutes=Math.min(120,Math.max(3,Number(cmd.minutes)));
+    if(["wave","build","peak","chill","warmup"].includes(cmd.shape)) o.shape=cmd.shape;
+    if(["blend","quick","cut"].includes(cmd.trans)) o.trans=cmd.trans;
+    const i=M.mix(o); if(!i) return {error:"I couldn't start the mix."};
+    const mi=M.mixInfo&&M.mixInfo(); return {chip:"DJ MIX · "+(mi?mi.total+" TRACKS · ~"+Math.round(mi.minutes)+" MIN":"NOW PLAYING")};
+  }
+  if(c==="mixnext"){ if(M.mixNext&&M.mixNext()) return {chip:"MIXING INTO THE NEXT TRACK"}; return {error:"There's no mix playing."}; }
   if(c==="next"){ const i=M.next(); return i?{info:i,brief:M.current()}:{error:"Nothing to skip yet — tell me what you'd like to hear."}; }
   if(c==="steer"){
     if(!act) return {error:"Nothing is playing yet — ask me to play something first."};
@@ -794,7 +818,7 @@ async function runMusic(cmd,curMood){
     return {chip:bits.join(" · ")||"ADJUSTED LIVE"};
   }
   const mood=MUSIC_MOODS.includes(cmd.mood)?cmd.mood:(curMood||"neutral");
-  const i=M.play({mood,intent:cmd.intent,style:cmd.style,energy:typeof cmd.energy==="number"?cmd.energy:undefined});
+  const i=M.play({mood,intent:cmd.intent,style:cmd.style,solo:typeof cmd.solo==="string"?cmd.solo:undefined,energy:typeof cmd.energy==="number"?cmd.energy:undefined});
   return i?{info:i,brief:M.current(),note:cmd.note||""}:{error:"I couldn't start the music."};
 }
 function useMusicInfo(){
@@ -849,7 +873,7 @@ function MusicCard({music,mood}){
       <button onClick={toggle} aria-label={playing?"Pause":"Play"} style={{width:40,height:40,borderRadius:"50%",border:"none",cursor:"pointer",background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,color:"#0c0905",fontSize:15,flexShrink:0}}>{playing?"❚❚":"▶"}</button>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:15,color:"rgba(235,228,216,.92)",fontFamily:SF,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{i.title||"Untitled"}</div>
-        <div style={{fontSize:9,letterSpacing:".1em",color:m.acc,opacity:.6,fontFamily:SS,marginTop:3}}>{(i.mood||"").toUpperCase()} · {(i.styleName||"").toUpperCase()} · {i.bpm} BPM · {(i.key||"").toUpperCase()}</div>
+        <div style={{fontSize:9,letterSpacing:".1em",color:m.acc,opacity:.6,fontFamily:SS,marginTop:3}}>{(i.mood||"").toUpperCase()} · {(i.solo?i.solo+" solo":i.styleName||"").toUpperCase()} · {i.bpm} BPM · {(i.key||"").toUpperCase()}</div>
       </div>
       {playing&&<MusicViz color={m.acc}/>}
     </div>
@@ -965,7 +989,7 @@ After reply include: PROFILE_UPDATE:{"name":"","values":[],"fears":[],"goals":[]
 If user mentions a person by name, include after reply on new line: RELATIONSHIP_UPDATE:{"PersonName":{"relation":"friend/family/colleague/etc","mood":"positive/negative/mixed","context":"one sentence"}}
 If THIS message contains a profound moment — something the user has never said before, a realisation, a confession, or a turning point — include after reply: ANCHOR:{"theme":"one word","reflection":"one sentence echo of what they said"}
 Only include ANCHOR when truly significant. Not every message. Maybe 1 in 10.
-Music: you can play the person music that you compose live (original, synthesized, endless, never the same twice). ONLY play music when the person asks for it in their latest message (play, put on, music, a song, a beat, "something to listen to"). Never start music on your own, never offer or suggest it, even when they are low or celebrating — just be present. To start music when asked, add on its own last line: MUSIC:{"mood":"joy|hope|love|neutral|sadness|fear|anger|confusion","intent":"match|lift|calm","style":"afrobeats|amapiano|lofi|house|trap|rnb|ambient|cinematic|acoustic","energy":0.5,"note":"why, a few words"}  (style and energy optional). intent: match = mirror their mood, lift = travel gently toward brighter, calm = settle them down. For sadness, fear, anger or anxiety default to lift or calm unless they say they want to sit in it (then match). YOU HAVE FULL CONTROL of music that is playing — whenever they ask for any change, do it with a tag, one per reply: MUSIC:{"cmd":"volume","level":0.4} (absolute 0-1) or MUSIC:{"cmd":"volume","delta":-0.2} (relative: "a bit lower" -0.15, "much quieter" -0.35, "louder" +0.2) · MUSIC:{"cmd":"pause"} / {"cmd":"resume"} · MUSIC:{"cmd":"stop"} · MUSIC:{"cmd":"next"} (fresh piece) · MUSIC:{"cmd":"like"} (save it) · MUSIC:{"cmd":"saved","n":1} (play their liked pieces) · MUSIC:{"cmd":"sleep","minutes":20} (fade out and stop later; 0 cancels) · MUSIC:{"cmd":"steer", ...} with any of: "energy" (-0.5..0.5), "bpm" (relative, e.g. -10), "tempo" (absolute 50-150), "mood", "style", "layers":{"drums":false,"bass":false,"lead":false,"chords":false,"pad":false,"arp":false} (false = remove that part, true = bring it back), "instrument":{"lead":"piano|keys|guitar|sax|violin|flute|kalimba|bells|marimba|brass|strings|synth|organ","bass":"sub|808|pluck|synthbass|log","chords":"...","pad":"..."}, "reset":true (all parts back). Combine several changes in one steer when they ask for several. "Volume" and "louder/quieter" mean the loudness (cmd volume), not energy. Only say you changed something if you included the tag; never mention the tag or JSON. When you start music keep your reply to one or two warm lines — the music does the talking. ${musicTaste()}
+Music: you can play the person music that you compose live (original, synthesized, endless, never the same twice). ONLY play music when the person asks for it in their latest message (play, put on, music, a song, a beat, "something to listen to"). Never start music on your own, never offer or suggest it, even when they are low or celebrating — just be present. To start music when asked, add on its own last line: MUSIC:{"mood":"joy|hope|love|neutral|sadness|fear|anger|confusion","intent":"match|lift|calm","style":"afrobeats|amapiano|lofi|house|trap|rnb|ambient|cinematic|acoustic","energy":0.5,"note":"why, a few words"}  (style and energy optional). intent: match = mirror their mood, lift = travel gently toward brighter, calm = settle them down. For sadness, fear, anger or anxiety default to lift or calm unless they say they want to sit in it (then match). YOU HAVE FULL CONTROL of music that is playing — whenever they ask for any change, do it with a tag, one per reply: MUSIC:{"cmd":"volume","level":0.4} (absolute 0-1) or MUSIC:{"cmd":"volume","delta":-0.2} (relative: "a bit lower" -0.15, "much quieter" -0.35, "louder" +0.2) · MUSIC:{"cmd":"pause"} / {"cmd":"resume"} · MUSIC:{"cmd":"stop"} · MUSIC:{"cmd":"next"} (fresh piece) · MUSIC:{"cmd":"like"} (save it) · MUSIC:{"cmd":"saved","n":1} (play their liked pieces) · MUSIC:{"cmd":"sleep","minutes":20} (fade out and stop later; 0 cancels) · MUSIC:{"cmd":"steer", ...} with any of: "energy" (-0.5..0.5), "bpm" (relative, e.g. -10), "tempo" (absolute 50-150), "mood", "style", "layers":{"drums":false,"bass":false,"lead":false,"chords":false,"pad":false,"arp":false} (false = remove that part, true = bring it back), "instrument":{"lead":"piano|keys|guitar|sax|violin|flute|kalimba|bells|marimba|brass|strings|synth|organ","bass":"sub|808|pluck|synthbass|log","chords":"...","pad":"..."}, "reset":true (all parts back). Combine several changes in one steer when they ask for several. DJ MIXES: when they ask for a mix / DJ set / non-stop music, send MUSIC:{"cmd":"mix","styles":["afrobeats","amapiano","house"],"minutes":20,"shape":"wave|build|peak|chill|warmup","trans":"blend|quick|cut","moods":["joy"]} (all optional; styles any of the nine; default about 15 minutes) — it is a real DJ set: beat-matched, key-compatible handovers with bass swaps and sweeps, one track flowing into the next; {"cmd":"mixnext"} jumps to the next track in the mix. SOLO PERFORMANCES: when they ask for a solo or one instrument on its own, start with MUSIC:{"mood":"love","solo":"piano|keys|guitar|sax|violin|flute|kalimba|marimba|bells|brass","note":"…"} — a single instrument performs with natural phrasing and room sound. "Volume" and "louder/quieter" mean the loudness (cmd volume), not energy. Only say you changed something if you included the tag; never mention the tag or JSON. When you start music keep your reply to one or two warm lines — the music does the talking. ${musicTaste()}
 Known: Name:${p.name||"?"} Values:${(p.values||[]).join(",")||"-"} Fears:${(p.fears||[]).join(",")||"-"} Goals:${(p.goals||[]).join(",")||"-"}
 ${arc?"Emotional arc: "+arc:""}
 ${anchors.length?"Anchors (significant moments to thread back): "+anchors.slice(-3).map(a=>'"'+a.quote.slice(0,80)+'" — '+a.theme).join(" | "):""}
@@ -2055,10 +2079,10 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
       }
       // Music only ever starts when the person asked for it in this message; a stray model tag is ignored (stop is always honoured).
       const musicAct=!!(window.EchoMusic&&window.EchoMusic.info&&window.EchoMusic.info().active);
-      const askedMusic=!!sniffMusic(text,musicAct)||/\b(music|songs?|beats?|tunes?|play)\b/i.test(text);
+      const askedMusic=!!sniffMusic(text,musicAct)||/\b(music|songs?|beats?|tunes?|play|mix|dj|solo)\b/i.test(text);
       let mcmd=extractMusic(raw);
       if(mcmd&&!mcmd.cmd&&!askedMusic) mcmd=null;                                   // starting music needs an ask
-      if(mcmd&&mcmd.cmd&&!["stop","saved","next"].includes(mcmd.cmd)&&!musicAct) mcmd=null; // volume, pause, parts… need music playing
+      if(mcmd&&mcmd.cmd&&!["stop","saved","next","mix"].includes(mcmd.cmd)&&!musicAct) mcmd=null; // volume, pause, parts… need music playing
       const snf=sniffMusic(text,musicAct);
       if(snf&&snf.cmd&&musicAct&&(!mcmd||!mcmd.cmd)) mcmd=snf;   // they asked for a control (volume…) but the model sent a fresh-play tag: do what they asked
       if(!mcmd) mcmd=snf;
