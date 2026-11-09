@@ -2023,7 +2023,7 @@ function YoEcho(){
   const[tutorMsgs,setTutorMsgs]=useState([]);
   const[tutorIn,setTutorIn]  =useState("");
   const[tutorBusy,setTutorBusy]=useState(false);
-  const lastEcho=useRef(""); const recRef=useRef(null); const onFinalRef=useRef(null); const silenceTimer=useRef(null);
+  const lastEcho=useRef(""); const micRestoreRef=useRef(null); const recRef=useRef(null); const onFinalRef=useRef(null); const silenceTimer=useRef(null);
   const chatEnd=useRef(); const wiserEnd=useRef();
 
   // ── FAVICON + TAB TITLE INJECTION ──────────────────────────────────────────
@@ -2232,7 +2232,8 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
   // ── LISTEN ──────────────────────────────────────────────────────────────────
   const stopListening=useCallback(()=>{
     if(silenceTimer.current){clearTimeout(silenceTimer.current);silenceTimer.current=null;}
-    if(recRef.current){try{recRef.current.stop();}catch(e){}try{recRef.current.abort();}catch(e){}recRef.current=null;}
+    if(recRef.current){const r=recRef.current;recRef.current=null;try{r.stop();}catch(e){}try{r.abort();}catch(e){}}
+    if(micRestoreRef.current)micRestoreRef.current();
     setListening(false); setTranscript(""); setMicError("");
   },[]);
 
@@ -2240,17 +2241,32 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
     setMicError(""); setMicModal(false);
     if(!hasSpeechRecognition()){setMicError("Speech recognition needs Chrome or Edge.");return;}
     onFinalRef.current=onFinal;
-    if(recRef.current){try{recRef.current.abort();}catch(e){}recRef.current=null;}
+    if(recRef.current){const old=recRef.current;recRef.current=null;try{old.abort();}catch(e){}}
     stopEcho(); setListening(true); setTranscript("Listening…");
-    const rec=startRecognitionSync(
-      text=>setTranscript(text),
-      text=>{setListening(false);setTranscript("");recRef.current=null;onFinalRef.current?.(text);},
-      err=>{setListening(false);setTranscript("");recRef.current=null;
-        if(err==="not-allowed"||err==="no-support"||err==="start-failed") setMicModal(true);
-        else if(err==="network") setMicError("Network error. Check your connection.");
-        else if(err!=="no-speech") setMicError("Mic error: "+err+". Tap again.");}
-    );
-    recRef.current=rec;
+    // Chrome (especially on Android) aborts speech recognition while the page is playing audio, so pause the music
+    // while they talk and bring it back afterwards (only if we were the one who paused it).
+    const M=window.EchoMusic; let pausedByMic=false;
+    try{ const mi=M&&M.info&&M.info(); if(mi&&mi.active&&mi.playing){ M.pause(); pausedByMic=true; } }catch(e){}
+    const restore=()=>{ micRestoreRef.current=null; if(!pausedByMic) return; pausedByMic=false; try{ const mi=M.info(); if(mi&&mi.active&&mi.paused) M.resume(); }catch(e){} };
+    micRestoreRef.current=restore;
+    setTimeout(()=>{ if(micRestoreRef.current===restore) restore(); },45000); // never leave the music paused if the mic goes quiet
+    let me=null;
+    const begin=tries=>{
+      me=startRecognitionSync(
+        text=>setTranscript(text),
+        text=>{if(recRef.current!==me)return;setListening(false);setTranscript("");recRef.current=null;restore();onFinalRef.current?.(text);},
+        err=>{
+          if(recRef.current!==me) return; // we stopped it ourselves, nothing to report
+          if(err==="aborted"&&tries<2){ recRef.current=null; setTimeout(()=>{ if(micRestoreRef.current===restore){ begin(tries+1); recRef.current=me; } },400); return; }
+          setListening(false);setTranscript("");recRef.current=null;restore();
+          if(err==="not-allowed"||err==="no-support"||err==="start-failed") setMicModal(true);
+          else if(err==="network") setMicError("Network error. Check your connection.");
+          else if(err==="aborted") setMicError("The mic was interrupted by another app or sound. Tap again.");
+          else if(err!=="no-speech") setMicError("Mic error: "+err+". Tap again.");}
+      );
+    };
+    // small pause so the audio system lets go before the mic opens
+    if(pausedByMic) setTimeout(()=>{ if(micRestoreRef.current===restore){ begin(0); recRef.current=me; } },250); else { begin(0); recRef.current=me; }
   },[stopEcho]);
 
   const toggleMic=useCallback(onFinal=>{ if(listening) stopListening(); else startListening(onFinal); },[listening,stopListening,startListening]);
