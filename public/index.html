@@ -2499,18 +2499,18 @@ What was your real first thought — before the polished reply?`}],
           <p style={{fontSize:8,color:"rgba(196,168,130,.36)",marginTop:4,letterSpacing:".08em",fontFamily:SS}}>your wiser self, becoming</p>
           {profileId&&<p style={{fontSize:8,color:m.acc,opacity:.4,marginTop:6,fontFamily:SS,letterSpacing:".06em"}}>key: {profileId}</p>}
         </div>
-        <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",paddingBottom:8}}>
+        <div style={{flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",touchAction:"pan-y",overscrollBehavior:"contain",paddingBottom:"calc(env(safe-area-inset-bottom) + 90px)"}}>
           {[["⌂","Home","home"],["◎","Chat","chat"],["✦","Wiser You","wiser"],["✎","Journal","journal"],["⚡","Debates","debate"],["◉","Deep Beliefs","beliefs"],["◈","Patterns","patterns"],["🗺","Relationships","relationships"],["⚓","Anchors","anchors"],["♫","Music","music"],["⏰","Reminders","reminders"],["🎓","Tutor Mode","tutor"],["◬","Echo State","echostate"]].map(([ico,lbl,sc])=>(
-            <button key={sc} onClick={()=>go(sc)} style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.62)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
+            <button key={sc} onClick={()=>go(sc)} style={{width:"100%",padding:"8px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.62)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:40}}>
               <span style={{fontSize:14,opacity:.65}}>{ico}</span>{lbl}
             </button>
           ))}
           <button onClick={()=>{setMenu(false);setScreen("tour");}}
-            style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
+            style={{width:"100%",padding:"8px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:40}}>
             <span style={{fontSize:14,opacity:.65}}>◉</span>App Tour
           </button>
           <button onClick={()=>{setMenu(false);setScreen("login");setChatMsgs([]);setWiserMsgs([]);setProfileId(null);stopEcho();if(window.EchoMusic)window.EchoMusic.stop();}}
-            style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
+            style={{width:"100%",padding:"8px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.3)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:40}}>
             <span style={{fontSize:14,opacity:.65}}>⎋</span>Switch Key
           </button>
         </div>
@@ -2606,6 +2606,7 @@ What was your real first thought — before the polished reply?`}],
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>go("music")} aria-label="Music" style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:m.acc,opacity:.8,lineHeight:1}}>♫</button>
+          <button onClick={()=>go("reminders")} aria-label="Reminders" style={{background:"transparent",border:"none",fontSize:17,cursor:"pointer",lineHeight:1}}>⏰</button>
           <button onClick={()=>{if(speaking)stopEcho();setVoiceOn(v=>!v);}} style={{background:"transparent",border:"none",fontSize:17,cursor:"pointer",opacity:voiceOn?1:.35,lineHeight:1}}>{voiceOn?"🔊":"🔇"}</button>
           <button onClick={()=>setMenu(true)} style={{background:"rgba(196,168,130,.09)",border:"1px solid rgba(196,168,130,.24)",borderRadius:19,padding:"7px 15px",color:m.acc,fontSize:9,letterSpacing:".12em",cursor:"pointer",fontFamily:SS}}>MENU</button>
         </div>
@@ -2646,7 +2647,7 @@ What was your real first thought — before the polished reply?`}],
           ))}
         </div>
       </div>
-      {menu&&<MenuOverlay/>}
+      {menu&&MenuOverlay()}
       {voiceMode&&<VoiceModeOverlay mood={mood} listening={listening} speaking={speaking} transcript={transcript} onClose={()=>setVoiceMode(false)} onMicToggle={chatMicToggle} onStopSpeak={stopEcho} speechSpeed={speechSpeed} onSpeedChange={setSpeechSpeed}/>}
       <MicModal onRetry={chatMicToggle}/>
     </div>
