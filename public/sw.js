@@ -2,7 +2,7 @@
 // v8 — bumped for the body-language update (gestures, hands, expressions). The face files (/echo-face.js, /vendor/*, /avatars/*) are
 // downloaded the first time someone opens Face to face, then cached by the cache-first rule
 // below so the face keeps working offline. They are not precached, to save mobile data.
-const CACHE_NAME = "yoecho-pwa-v17";
+const CACHE_NAME = "yoecho-pwa-v18";
 
 const PRECACHE_ASSETS = [
   "/",
@@ -75,4 +75,31 @@ self.addEventListener("fetch", (event) => {
       });
     })
   );
+});
+
+// ── Push notifications (reminders + check-ins) ───────────────────────────────
+self.addEventListener("push", (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : "" }; }
+  const title = d.title || "YoEcho";
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    // if YoEcho is open and in front, show it inside the app instead of as a system notification
+    if (wins.some((c) => c.visibilityState === "visible") && d.kind !== "test") { wins.forEach((c) => c.postMessage({ type: "echo-push", data: d })); return; }
+    await self.registration.showNotification(title, {
+      body: d.body || "I have something for you.", icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
+      tag: d.tag || d.kind || "yoecho", renotify: true, vibrate: [90, 40, 90], data: d,
+    });
+  })());
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const d = event.notification.data || {};
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const w = wins[0];
+    if (w) { try { await w.focus(); } catch (e) {} w.postMessage({ type: "echo-push-open", data: d }); return; }
+    await self.clients.openWindow("/?from=push&kind=" + encodeURIComponent(d.kind || ""));
+  })());
 });

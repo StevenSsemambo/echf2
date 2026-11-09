@@ -476,7 +476,7 @@ const parseMood  = t=>{ const x=String(t||"").match(/^[\s\[\(`*_]*MOOD\s*[:=]\s*
 // same line or new line, one-line or multi-line JSON, nested braces, even a reply cut off in the middle of the JSON.
 function stripTagBlocks(t){
   let s=String(t||""), guard=0;
-  const re=/\b(?:PROFILE_UPDATE|RELATIONSHIP_UPDATE|ANCHOR|MUSIC|JOURNAL_INSIGHT)\s*:\s*/;
+  const re=/\b(?:PROFILE_UPDATE|RELATIONSHIP_UPDATE|ANCHOR|MUSIC|REMINDER|JOURNAL_INSIGHT)\s*:\s*/;
   // models sometimes write the tag in another case or with a space ("Profile update: {...}"): only when JSON follows
   const re2=/\b(?:profile|relationship|journal)[_ ]?(?:update|insight)\s*:\s*(?=\{)/i;
   while(guard++<12){
@@ -549,6 +549,192 @@ function buildMessageWindow(messages) {
 
 // What YoEcho knows about its own body and abilities, plus the live state of the app. Added to EVERY call (see callClaude),
 // so the model's picture of itself always matches what the app can actually do right now.
+// ═══ Time awareness, reminders and push notifications ═══
+const REM_KEY="yoecho_reminders", PUSH_KEY="yoecho_push";
+const remTz=()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"; }catch(e){ return "UTC"; } };
+const fmtWhen=(iso)=>{ const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})+" · "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}); };
+const Rem={
+  list(){ try{ const l=JSON.parse(localStorage.getItem(REM_KEY)||"[]"); return Array.isArray(l)?l:[]; }catch(e){ return []; } },
+  save(l){ try{ localStorage.setItem(REM_KEY,JSON.stringify(l.slice(-80))); }catch(e){} try{ window.dispatchEvent(new Event("echo-reminders")); }catch(e){} },
+  pending(){ return Rem.list().filter(r=>!r.done).sort((a,b)=>new Date(a.at)-new Date(b.at)); },
+  // a reminder has gone off: finish it, or move a repeating one to its next time (same wall-clock time)
+  fired(r){
+    if(!r.repeat||r.repeat==="none"){ r.done=true; return; }
+    const d=new Date(r.at), now=Date.now(); let g=0;
+    do{ d.setDate(d.getDate()+(r.repeat==="weekly"?7:1)); g++; }while(g<400&&(d.getTime()<=now||(r.repeat==="weekdays"&&[0,6].includes(d.getDay()))||(r.repeat==="weekends"&&![0,6].includes(d.getDay()))));
+    r.at=d.toISOString();
+  }
+};
+function nowContext(){
+  const d=new Date();
+  let s=`TIME AWARENESS (true right now): it is ${d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}, ${d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})} (${remTz()}). Use it for "today", "tomorrow", "this Friday", for greetings that fit the time of day, and for noticing very late nights. Never claim a different date or time.`;
+  const p=Rem.pending().slice(0,8);
+  if(p.length) s+=" Their upcoming reminders: "+p.map(r=>`"${r.title}" ${fmtWhen(r.at)}${r.repeat&&r.repeat!=="none"?" (repeats "+r.repeat+")":""}`).join("; ")+".";
+  return s;
+}
+function extractReminders(raw){
+  const out=[], re=/REMINDER:(\{[^\n]*\})/g, s=String(raw||""); let m;
+  while((m=re.exec(s))){ try{ out.push(JSON.parse(m[1])); }catch(e){ try{ out.push(JSON.parse(m[1].slice(0,m[1].lastIndexOf("}")+1))); }catch(e2){} } }
+  return out;
+}
+function stripReminder(t){ return String(t||"").replace(/\n?REMINDER:\{[^\n]*\}[ \t]*/g,"").trim(); }
+const newRemId=()=>{ try{ if(crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return Date.now().toString(36)+Math.random().toString(36).slice(2,9); };
+function pushOn(){ try{ return localStorage.getItem(PUSH_KEY)==="1"; }catch(e){ return false; } }
+async function pushApi(body){ const r=await fetch("/.netlify/functions/push",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.json(); }
+function remServerUpsert(pid,rems){ if(!pid||!pushOn()||!rems.length) return; pushApi({action:"reminder_upsert",profileId:pid,reminders:rems.map(r=>({id:r.id,title:r.title,at:r.at,repeat:r.repeat,tz:r.tz||remTz(),done:!!r.done}))}).catch(()=>{}); }
+function remServerDelete(pid,id){ if(!pid||!pushOn()) return; pushApi({action:"reminder_delete",profileId:pid,id}).catch(()=>{}); }
+function addReminder(pid,title,at,repeat){
+  const r={id:newRemId(),title:String(title).trim().slice(0,160),at:new Date(at).toISOString(),repeat:["daily","weekly","weekdays","weekends"].includes(repeat)?repeat:"none",tz:remTz(),done:false};
+  const l=Rem.list(); l.push(r); Rem.save(l); remServerUpsert(pid,[r]); return r;
+}
+function removeReminder(pid,id){ Rem.save(Rem.list().filter(r=>r.id!==id)); remServerDelete(pid,id); }
+// Runs the REMINDER tags from a reply. Returns what to show under the message.
+function applyReminders(tags,pid){
+  const chips=[], errs=[];
+  for(const t of tags){
+    if(!t||typeof t!=="object") continue;
+    if(t.cancel){
+      const q=String(t.cancel).toLowerCase(), hit=Rem.pending().find(r=>r.id===t.cancel||r.title.toLowerCase().includes(q)||q.includes(r.title.toLowerCase()));
+      if(hit){ removeReminder(pid,hit.id); chips.push("REMINDER CANCELLED · "+hit.title.slice(0,40)); } else errs.push("I couldn't find a reminder called “"+String(t.cancel).slice(0,40)+"”.");
+      continue;
+    }
+    const title=String(t.title||"").trim(), at=new Date(t.at);
+    if(!title||isNaN(at.getTime())){ errs.push("I couldn't work out the time for that reminder — tell me the day and time again."); continue; }
+    if(at.getTime()<Date.now()-60000){ errs.push("That time has already passed — when would you like me to remind you?"); continue; }
+    const r=addReminder(pid,title,at,t.repeat);
+    chips.push("⏰ "+fmtWhen(r.at)+" — "+r.title+(r.repeat!=="none"?" · repeats "+r.repeat:""));
+  }
+  return {chips,errs};
+}
+const urlB64=(s)=>{ const raw=atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); const u=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) u[i]=raw.charCodeAt(i); return u; };
+const PushX={
+  supported(){ return "serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window; },
+  ios(){ return /iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1); },
+  standalone(){ try{ return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true; }catch(e){ return false; } },
+  prefs(){ try{ return JSON.parse(localStorage.getItem("yoecho_push_prefs")||"{}"); }catch(e){ return {}; } },
+  savePrefs(p){ try{ localStorage.setItem("yoecho_push_prefs",JSON.stringify(p)); }catch(e){} },
+  async sub(){ const reg=await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); },
+  async enable(pid,name){
+    if(!PushX.supported()) throw new Error(PushX.ios()&&!PushX.standalone()?"On iPhone, first tap Share → Add to Home Screen, then open YoEcho from your home screen and try again.":"This browser doesn't support notifications.");
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted") throw new Error("Notifications are blocked — allow them for YoEcho in your browser or phone settings, then try again.");
+    const cfg=await pushApi({action:"config"});
+    if(!cfg.ready||!cfg.publicKey) throw new Error("The notification server isn't set up yet (run supabase-push.sql in Supabase — see the README)."+(cfg.error?" ["+String(cfg.error).slice(0,90)+"]":""));
+    const reg=await navigator.serviceWorker.ready; let s=await reg.pushManager.getSubscription();
+    if(!s) s=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64(cfg.publicKey)});
+    const prefs=Object.assign({checkins:"few"},PushX.prefs(),{name:String(name||"").trim().split(" ")[0]});
+    const r=await pushApi({action:"subscribe",profileId:pid,subscription:s.toJSON(),tz:remTz(),prefs});
+    if(r.error||r.ready===false) throw new Error(r.error||"I couldn't save this device for notifications.");
+    PushX.savePrefs(prefs); try{ localStorage.setItem(PUSH_KEY,"1"); }catch(e){}
+    remServerUpsert(pid,Rem.pending()); return true;
+  },
+  async disable(){ try{ const s=await PushX.sub(); if(s){ await pushApi({action:"unsubscribe",endpoint:s.endpoint}).catch(()=>{}); await s.unsubscribe(); } }catch(e){} try{ localStorage.removeItem(PUSH_KEY); }catch(e){} },
+  async setPrefs(p){ const prefs=Object.assign(PushX.prefs(),p); PushX.savePrefs(prefs); const s=await PushX.sub().catch(()=>null); if(s) await pushApi({action:"prefs",endpoint:s.endpoint,prefs,tz:remTz()}).catch(()=>{}); },
+  async test(){ const s=await PushX.sub(); if(!s) throw new Error("Notifications aren't turned on yet."); const r=await pushApi({action:"test",endpoint:s.endpoint}); if(!r.sent) throw new Error(r.error||("Delivery failed ("+(r.status||"?")+")")); }
+};
+// Mounted once: fires reminders while the app is open, listens for pushes the service worker hands over, shows the in-app banner
+function RemindersRuntime(){
+  const[toast,setToast]=useState(null);
+  useEffect(()=>{
+    let tm=null;
+    const fire=(title,body)=>{ setToast({title,body}); clearTimeout(tm); tm=setTimeout(()=>setToast(null),15000); };
+    const check=()=>{
+      const now=Date.now(), pid=window.__echoPid; let list=Rem.list(), ch=false;
+      list.forEach(r=>{
+        if(r.done) return; const due=new Date(r.at).getTime(); if(due>now) return;
+        const late=now-due; if(pushOn()&&late<90000) return;      // the server is delivering this one
+        if(late>6*3600e3){ Rem.fired(r); ch=true; return; }        // too old to be useful
+        fire("Reminder",r.title);
+        try{ if(document.hidden&&Notification.permission==="granted") navigator.serviceWorker.ready.then(reg=>reg.showNotification("Reminder",{body:r.title,icon:"/icons/icon-192.png",tag:"rem-"+r.id})); }catch(e){}
+        Rem.fired(r); ch=true; remServerUpsert(pid,[r]);
+      });
+      if(ch) Rem.save(list);
+    };
+    const seen=()=>{ if(!pushOn()||!window.__echoPid||document.hidden) return; PushX.sub().then(s=>{ if(s) pushApi({action:"seen",endpoint:s.endpoint}).catch(()=>{}); }).catch(()=>{}); };
+    const onMsg=(e)=>{
+      const m=e.data||{}, d=m.data||{};
+      if(m.type==="echo-push"){
+        if(d.kind==="reminder"&&d.id){ const l=Rem.list(), r=l.find(x=>x.id===d.id); if(r&&!r.done){ Rem.fired(r); Rem.save(l); } }
+        fire(d.kind==="reminder"?"Reminder":"YoEcho",d.body||"");
+      }
+      if(m.type==="echo-push-open"&&window.__echoPid) window.dispatchEvent(new CustomEvent("echo-goto",{detail:"chat"}));
+    };
+    check(); seen();
+    const t1=setInterval(check,15000), t2=setInterval(seen,20*60000), vis=()=>{ if(!document.hidden){ check(); seen(); } };
+    document.addEventListener("visibilitychange",vis);
+    try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener("message",onMsg); }catch(e){}
+    window.addEventListener("echo-toast",e=>fire(e.detail.title,e.detail.body));
+    return()=>{ clearInterval(t1); clearInterval(t2); clearTimeout(tm); document.removeEventListener("visibilitychange",vis); try{ navigator.serviceWorker&&navigator.serviceWorker.removeEventListener("message",onMsg); }catch(e){} };
+  },[]);
+  if(!toast) return null;
+  return <div role="status" onClick={()=>setToast(null)} style={{position:"fixed",top:"max(12px, env(safe-area-inset-top))",left:12,right:12,maxWidth:420,margin:"0 auto",zIndex:99999,padding:"13px 16px",borderRadius:18,background:"rgba(24,18,11,.96)",border:"1px solid rgba(196,168,130,.45)",boxShadow:"0 8px 34px rgba(0,0,0,.55)",fontFamily:SF,cursor:"pointer"}}>
+    <div style={{fontSize:8,letterSpacing:".16em",color:"#c4a882",fontFamily:SS,opacity:.75,marginBottom:4}}>⏰ {String(toast.title||"").toUpperCase()}</div>
+    <div style={{fontSize:15,color:"rgba(235,228,216,.95)"}}>{toast.body}</div>
+  </div>;
+}
+function RemCard({rem}){
+  if(!rem) return null;
+  return <div style={{marginTop:8,marginLeft:24}}>
+    {(rem.chips||[]).map((c,i)=><div key={i} style={{fontSize:10,letterSpacing:".08em",color:"#c4a882",opacity:.75,fontFamily:SS,marginBottom:3}}>{c}</div>)}
+    {(rem.errs||[]).map((c,i)=><div key={"e"+i} style={{fontSize:11,color:"rgba(235,228,216,.55)",fontFamily:SS,marginBottom:3}}>{c}</div>)}
+  </div>;
+}
+function RemindersScreen({mood,tick,speaking,onBack,profileId,profile}){
+  const m=MOODS[mood]||MOODS.neutral;
+  const[,bump]=useState(0), [on,setOn]=useState(pushOn()), [busy,setBusy]=useState(false), [msg,setMsg]=useState("");
+  const[prefs,setPrefs]=useState(PushX.prefs());
+  const[title,setTitle]=useState(""), [when,setWhen]=useState(""), [rep,setRep]=useState("none");
+  useEffect(()=>{ const f=()=>bump(x=>x+1); window.addEventListener("echo-reminders",f); return()=>window.removeEventListener("echo-reminders",f); },[]);
+  const list=Rem.pending(), sup=PushX.supported();
+  const chip=(a)=>({...mbtn,padding:"7px 12px",borderColor:a?m.acc:"rgba(196,168,130,.22)",background:a?`${m.acc}26`:"rgba(196,168,130,.06)"});
+  const lbl={fontSize:8,letterSpacing:".14em",color:m.acc,opacity:.55,fontFamily:SS,marginBottom:8};
+  const turnOn=async()=>{ setBusy(true); setMsg(""); try{ await PushX.enable(profileId,profile&&profile.name); setOn(true); setPrefs(PushX.prefs()); setMsg("Notifications are on. I'll remind you when it's time."); }catch(e){ setMsg(e.message); } setBusy(false); };
+  const turnOff=async()=>{ setBusy(true); await PushX.disable(); setOn(false); setMsg("Notifications are off. I'll still remind you inside the app while it's open."); setBusy(false); };
+  const test=async()=>{ setBusy(true); setMsg(""); try{ await PushX.test(); setMsg("Sent — it should reach your phone in a moment."); }catch(e){ setMsg(e.message); } setBusy(false); };
+  const setCk=(v)=>{ PushX.setPrefs({checkins:v}); setPrefs({...PushX.prefs(),checkins:v}); };
+  const add=()=>{ if(!title.trim()||!when) return setMsg("Add what to remind you of and when."); if(new Date(when).getTime()<Date.now()) return setMsg("That time has already passed."); addReminder(profileId,title,when,rep); setTitle(""); setWhen(""); setRep("none"); setMsg("Added."); };
+  const inp={width:"100%",boxSizing:"border-box",padding:"11px 13px",borderRadius:14,border:"1px solid rgba(196,168,130,.25)",background:"rgba(196,168,130,.06)",color:"rgba(235,228,216,.92)",fontSize:14,fontFamily:SF,marginBottom:8,colorScheme:"dark"};
+  return <div style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",fontFamily:SF}}>
+    <style>{CSS}</style><Bg mood={mood}/>
+    <Hdr title="REMINDERS" sub="I'll tap you on the shoulder" onBack={onBack} mood={mood} right={<Orb size={26} mood={mood} tick={tick} speaking={speaking}/>}/>
+    <div style={{flex:1,overflowY:"auto",padding:"16px 14px 40px",maxWidth:600,margin:"0 auto",width:"100%",position:"relative",zIndex:5}}>
+      <div style={{fontSize:14,color:"rgba(235,228,216,.78)",lineHeight:1.6,marginBottom:16}}>Just tell me in chat — “remind me Friday at 3 to call mum” — and I'll make sure you hear about it. I can also check in on you now and then.</div>
+      <div style={{padding:16,borderRadius:20,marginBottom:18,background:`linear-gradient(135deg,${m.acc}1c,rgba(196,168,130,.05))`,border:`1px solid ${m.acc}40`}}>
+        <div style={lbl}>PHONE NOTIFICATIONS</div>
+        {!sup&&<div style={{fontSize:13,color:"rgba(235,228,216,.6)",marginBottom:8}}>{PushX.ios()&&!PushX.standalone()?"On iPhone: tap Share → Add to Home Screen, then open YoEcho from your home screen to turn notifications on.":"This browser can't receive notifications."}</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {!on&&<button disabled={busy} onClick={turnOn} style={{...mbtn,opacity:busy?.5:1}}>🔔 TURN ON</button>}
+          {on&&<button disabled={busy} onClick={test} style={mbtn}>SEND A TEST</button>}
+          {on&&<button disabled={busy} onClick={turnOff} style={mbtn}>TURN OFF</button>}
+        </div>
+        {on&&<div style={{marginTop:14}}>
+          <div style={lbl}>CHECK-INS · A KIND WORD NOW AND THEN (DAYTIME ONLY)</div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {[["off","OFF"],["weekly","WEEKLY"],["few","EVERY FEW DAYS"],["daily","DAILY"]].map(([k,l])=><button key={k} onClick={()=>setCk(k)} style={chip((prefs.checkins||"few")===k)}>{l}</button>)}
+          </div>
+        </div>}
+        {msg&&<div style={{marginTop:12,fontSize:12,color:"rgba(235,228,216,.7)",fontFamily:SS,lineHeight:1.5}}>{msg}</div>}
+      </div>
+      <div style={lbl}>COMING UP</div>
+      {list.length===0&&<div style={{fontSize:13,color:"rgba(235,228,216,.45)",marginBottom:16}}>Nothing yet.</div>}
+      {list.map(r=><div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:16,marginBottom:8,background:"rgba(196,168,130,.07)",border:"1px solid rgba(196,168,130,.16)"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,color:"rgba(235,228,216,.92)"}}>{r.title}</div>
+          <div style={{fontSize:9,letterSpacing:".1em",color:m.acc,opacity:.65,fontFamily:SS,marginTop:3}}>{fmtWhen(r.at).toUpperCase()}{r.repeat&&r.repeat!=="none"?" · REPEATS "+r.repeat.toUpperCase():""}</div>
+        </div>
+        <button aria-label="Delete reminder" onClick={()=>removeReminder(profileId,r.id)} style={{...mbtn,padding:"6px 10px"}}>✕</button>
+      </div>)}
+      <div style={{...lbl,marginTop:20}}>ADD ONE YOURSELF</div>
+      <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="What should I remind you of?" style={inp}/>
+      <input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)} style={inp}/>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:12}}>
+        {[["none","ONCE"],["daily","DAILY"],["weekdays","WEEKDAYS"],["weekly","WEEKLY"]].map(([k,l])=><button key={k} onClick={()=>setRep(k)} style={chip(rep===k)}>{l}</button>)}
+      </div>
+      <button onClick={add} style={{width:"100%",padding:"14px",borderRadius:26,border:"none",cursor:"pointer",background:`radial-gradient(circle at 35% 35%,${m.orb[0]},${m.orb[2]})`,color:"#0c0905",fontSize:12,letterSpacing:".16em",fontFamily:SS,fontWeight:700}}>ADD REMINDER</button>
+    </div>
+  </div>;
+}
+
 function selfKnowledge(){
   let face=false, music="";
   try{ const L=window.__echoLive||{}; face=!!(L.voiceMode&&facePrefs.on&&faceSupported()); }catch(e){}
@@ -557,11 +743,12 @@ function selfKnowledge(){
 - You HAVE a face and upper body: a 3D animated avatar. In Voice mode the person can switch on FACE TO FACE, where you appear with a face and torso, your lips move in time with your speech and your expression follows your mood. They can choose your look (avatar, skin tone) and your voice style. ${face?"Right now they ARE talking to you face to face: they can see you and your expressions.":"If they ask what you look like or whether you have a face, tell them yes and that face to face is in Voice mode."}
 - You HAVE a voice: you speak your replies aloud, in a tone that follows your mood, and you listen through their microphone.
 - You CAN play music: you compose original music live, on their device, in styles like afrobeats, amapiano, lo-fi, R&B, house, trap, ambient, cinematic and acoustic, with instruments such as piano, guitar, sax, violin, kalimba, bells and drums; you can also do DJ mixes and solo instrument performances. In the main Chat they just ask and you start it; there is also a Music screen in the menu. You only play music when they ask.${music}
+- You KNOW the current date and time (see TIME AWARENESS) and you can set REMINDERS: they tell you what and when, and once they turn notifications on (menu → Reminders) you send a push notification to their phone at the right time. You can also send gentle check-in notifications now and then if they switch that on there. You are a friend who remembers things for them.
 - You remember and reflect: anchors (significant moments), the people in their life, journal insights, patterns and beliefs, and you have Wiser Self, Journal, Debates, Tutor and Echo State modes.
 Never claim to be text-only, bodiless, voiceless or unable to play music. Do not claim abilities beyond these: you cannot browse the web or stream songs from Spotify (your music is composed by you, not streamed), and you cannot see through their camera.`;
 }
 async function callClaude(messages, system){
-  try{ system = String(system||"") + "\n\n" + selfKnowledge(); }catch(e){}
+  try{ system = String(system||"") + "\n\n" + nowContext() + "\n\n" + selfKnowledge(); }catch(e){}
   // Calls the Netlify serverless function — API key stays safe on the server
   const res = await fetch("/.netlify/functions/chat", {
     method: "POST",
@@ -990,6 +1177,7 @@ If user mentions a person by name, include after reply on new line: RELATIONSHIP
 If THIS message contains a profound moment — something the user has never said before, a realisation, a confession, or a turning point — include after reply: ANCHOR:{"theme":"one word","reflection":"one sentence echo of what they said"}
 Only include ANCHOR when truly significant. Not every message. Maybe 1 in 10.
 Music: you can play the person music that you compose live (original, synthesized, endless, never the same twice). ONLY play music when the person asks for it in their latest message (play, put on, music, a song, a beat, "something to listen to"). Never start music on your own, never offer or suggest it, even when they are low or celebrating — just be present. To start music when asked, add on its own last line: MUSIC:{"mood":"joy|hope|love|neutral|sadness|fear|anger|confusion","intent":"match|lift|calm","style":"afrobeats|amapiano|lofi|house|trap|rnb|ambient|cinematic|acoustic","energy":0.5,"note":"why, a few words"}  (style and energy optional). intent: match = mirror their mood, lift = travel gently toward brighter, calm = settle them down. For sadness, fear, anger or anxiety default to lift or calm unless they say they want to sit in it (then match). YOU HAVE FULL CONTROL of music that is playing — whenever they ask for any change, do it with a tag, one per reply: MUSIC:{"cmd":"volume","level":0.4} (absolute 0-1) or MUSIC:{"cmd":"volume","delta":-0.2} (relative: "a bit lower" -0.15, "much quieter" -0.35, "louder" +0.2) · MUSIC:{"cmd":"pause"} / {"cmd":"resume"} · MUSIC:{"cmd":"stop"} · MUSIC:{"cmd":"next"} (fresh piece) · MUSIC:{"cmd":"like"} (save it) · MUSIC:{"cmd":"saved","n":1} (play their liked pieces) · MUSIC:{"cmd":"sleep","minutes":20} (fade out and stop later; 0 cancels) · MUSIC:{"cmd":"steer", ...} with any of: "energy" (-0.5..0.5), "bpm" (relative, e.g. -10), "tempo" (absolute 50-150), "mood", "style", "layers":{"drums":false,"bass":false,"lead":false,"chords":false,"pad":false,"arp":false} (false = remove that part, true = bring it back), "instrument":{"lead":"piano|keys|guitar|sax|violin|flute|kalimba|bells|marimba|brass|strings|synth|organ","bass":"sub|808|pluck|synthbass|log","chords":"...","pad":"..."}, "reset":true (all parts back). Combine several changes in one steer when they ask for several. DJ MIXES: when they ask for a mix / DJ set / non-stop music, send MUSIC:{"cmd":"mix","styles":["afrobeats","amapiano","house"],"minutes":20,"shape":"wave|build|peak|chill|warmup","trans":"blend|quick|cut","moods":["joy"]} (all optional; styles any of the nine; default about 15 minutes) — it is a real DJ set: beat-matched, key-compatible handovers with bass swaps and sweeps, one track flowing into the next; {"cmd":"mixnext"} jumps to the next track in the mix. SOLO PERFORMANCES: when they ask for a solo or one instrument on its own, start with MUSIC:{"mood":"love","solo":"piano|keys|guitar|sax|violin|flute|kalimba|marimba|bells|brass","note":"…"} — a single instrument performs with natural phrasing and room sound. "Volume" and "louder/quieter" mean the loudness (cmd volume), not energy. Only say you changed something if you included the tag; never mention the tag or JSON. When you start music keep your reply to one or two warm lines — the music does the talking. ${musicTaste()}
+REMINDERS & TIME: you know the current date and time (TIME AWARENESS above). When they ask you to remind them of something, add on its own last line: REMINDER:{"title":"Call mum","at":"2026-11-13T15:00","repeat":"none|daily|weekly|weekdays|weekends"} — "at" is their LOCAL time as YYYY-MM-DDTHH:MM (24-hour), worked out from the current date and time ("tomorrow morning" = 09:00, "tonight" = 20:00, "in an hour" = now + 1 hour). If the day or the time is genuinely unclear, ask ONE short question and send no tag. The title is short and in their words. Several tags are allowed (one per line). To cancel one: REMINDER:{"cancel":"call mum"}. Only say a reminder is set if you included the tag, and confirm in one warm line with the day and time. Reminders reach their phone as notifications once they turn them on under Reminders in the menu; if notifications are off, mention that once, gently. Never mention the tag or JSON.
 Known: Name:${p.name||"?"} Values:${(p.values||[]).join(",")||"-"} Fears:${(p.fears||[]).join(",")||"-"} Goals:${(p.goals||[]).join(",")||"-"}
 ${arc?"Emotional arc: "+arc:""}
 ${anchors.length?"Anchors (significant moments to thread back): "+anchors.slice(-3).map(a=>'"'+a.quote.slice(0,80)+'" — '+a.theme).join(" | "):""}
@@ -1368,6 +1556,7 @@ function Bubble({msg,isWiser,mood,onSpeak,activeSpeaking,onMonologue}){
     </div>
     {isUser&&<div style={{fontSize:8,color:"rgba(196,168,130,.42)",marginTop:4,fontFamily:SS}}>{time}</div>}
     {!isUser&&msg.music&&<MusicCard music={msg.music} mood={mood}/>}
+    {!isUser&&msg.rem&&<RemCard rem={msg.rem}/>}
     {!isUser&&msg.monologue&&<div style={{paddingLeft:24,marginTop:6,padding:"8px 14px 8px 24px",background:"rgba(196,168,130,.05)",borderLeft:"2px solid rgba(196,168,130,.15)",borderRadius:"0 10px 10px 0",maxWidth:"88%"}}>
       <div style={{fontSize:7,color:"rgba(196,168,130,.35)",letterSpacing:".12em",fontFamily:SS,marginBottom:4}}>ECHO'S FIRST THOUGHT</div>
       <div style={{fontSize:13,color:"rgba(235,228,216,.55)",lineHeight:1.8,fontStyle:"italic",fontFamily:SF}}>{msg.monologue}</div>
@@ -2086,7 +2275,8 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
       const snf=sniffMusic(text,musicAct);
       if(snf&&snf.cmd&&musicAct&&(!mcmd||!mcmd.cmd)) mcmd=snf;   // they asked for a control (volume…) but the model sent a fresh-play tag: do what they asked
       if(!mcmd) mcmd=snf;
-      let clean=stripMusic(stripAnchor(stripRelUpdate(stripMood(raw))));
+      let clean=stripReminder(stripMusic(stripAnchor(stripRelUpdate(stripMood(raw)))));
+      let remMsg=null; try{ const rt=extractReminders(raw); if(rt.length){ remMsg=applyReminders(rt,profileId); if(!clean&&remMsg.chips.length) clean="Done."; } }catch(e){}
       let musicMsg=null;
       if(mcmd){
         try{ musicMsg=await runMusic(mcmd,parseMood(raw)||mood); }catch(e){ musicMsg={error:"I couldn't load the music engine — check your connection and ask again."}; }
@@ -2094,7 +2284,7 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
       }
       lastEcho.current=clean;
       const idx=history.length;
-      setChatMsgs(p=>[...p,{role:"echo",content:clean,mood:parseMood(raw)||"neutral",...(musicMsg?{music:musicMsg}:{})}]);
+      setChatMsgs(p=>[...p,{role:"echo",content:clean,mood:parseMood(raw)||"neutral",...(musicMsg?{music:musicMsg}:{}),...(remMsg&&(remMsg.chips.length||remMsg.errs.length)?{rem:remMsg}:{})}]);
       const newTotal=totalMsgs+2; setTotalMsgs(newTotal);
       if(profileId){
         const cid=chatId;
@@ -2279,6 +2469,8 @@ What was your real first thought — before the polished reply?`}],
     setJBusy(false);
   },[jText,jBusy,profileId,mood,profile,anchors,journalInsights,relationships,applyMood,echoSpeak]);
 
+  useEffect(()=>{ window.__echoPid=profileId; },[profileId]);
+  useEffect(()=>{ const f=e=>{ if(window.__echoPid&&e.detail) setScreen(e.detail); }; window.addEventListener("echo-goto",f); return()=>window.removeEventListener("echo-goto",f); },[]);
   const go=useCallback(s=>{
     setMenu(false);
     if(s==="wiser"&&wiserMsgs.length===0) bootWiser();
@@ -2308,7 +2500,7 @@ What was your real first thought — before the polished reply?`}],
           {profileId&&<p style={{fontSize:8,color:m.acc,opacity:.4,marginTop:6,fontFamily:SS,letterSpacing:".06em"}}>key: {profileId}</p>}
         </div>
         <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",paddingBottom:8}}>
-          {[["⌂","Home","home"],["◎","Chat","chat"],["✦","Wiser You","wiser"],["✎","Journal","journal"],["⚡","Debates","debate"],["◉","Deep Beliefs","beliefs"],["◈","Patterns","patterns"],["🗺","Relationships","relationships"],["⚓","Anchors","anchors"],["♫","Music","music"],["🎓","Tutor Mode","tutor"],["◬","Echo State","echostate"]].map(([ico,lbl,sc])=>(
+          {[["⌂","Home","home"],["◎","Chat","chat"],["✦","Wiser You","wiser"],["✎","Journal","journal"],["⚡","Debates","debate"],["◉","Deep Beliefs","beliefs"],["◈","Patterns","patterns"],["🗺","Relationships","relationships"],["⚓","Anchors","anchors"],["♫","Music","music"],["⏰","Reminders","reminders"],["🎓","Tutor Mode","tutor"],["◬","Echo State","echostate"]].map(([ico,lbl,sc])=>(
             <button key={sc} onClick={()=>go(sc)} style={{width:"100%",padding:"12px 22px",background:"transparent",border:"none",borderLeft:"2px solid transparent",color:"rgba(196,168,130,.62)",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:13,fontFamily:SF,fontSize:14,minHeight:46}}>
               <span style={{fontSize:14,opacity:.65}}>{ico}</span>{lbl}
             </button>
@@ -2856,6 +3048,7 @@ What was your real first thought — before the polished reply?`}],
   }
 
   // ── TUTOR ─────────────────────────────────────────────────────────────────────
+  if(screen==="reminders") return <RemindersScreen mood={mood} tick={tick} speaking={speaking} profileId={profileId} profile={profile} onBack={()=>setScreen("home")}/>;
   if(screen==="music") return <MusicScreen mood={mood} tick={tick} speaking={speaking} onBack={()=>setScreen("home")}/>;
 
   if(screen==="tutor") return(
@@ -3043,7 +3236,7 @@ What was your real first thought — before the polished reply?`}],
 
 // Mount the app
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(React.Fragment,null,React.createElement(YoEcho),React.createElement(MusicDock)));
+root.render(React.createElement(React.Fragment,null,React.createElement(YoEcho),React.createElement(MusicDock),React.createElement(RemindersRuntime)));
 
   </script>
 

@@ -39,3 +39,7 @@
   for = "/echo-music.js"
   [headers.values]
     Cache-Control = "public, max-age=86400"
+
+# Reminders + check-in notifications: runs every 2 minutes
+[functions."push-cron"]
+  schedule = "*/2 * * * *"

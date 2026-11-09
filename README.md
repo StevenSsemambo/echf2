@@ -193,3 +193,15 @@ public/
 - **DJ mixes**: ask for "a 30 minute afrobeats mix" or "a chill DJ set". Tracks are planned so tempos stay close, each handover is beat-matched and phrase-aligned, moves to a related key, swaps the bass (high-pass sweep) and uses risers/impacts. Console: `EchoMusic.mix({styles:["afrobeats","amapiano","house"],minutes:20,shape:"build",trans:"blend"})`, `EchoMusic.mixNext()`, `EchoMusic.renderMix(opts, seconds)` (offline).
 - **Solo performances**: ask for "solo piano" or "a sax solo". Piano, keys, guitar, kalimba, marimba and bells play melody, chords and bass themselves; sax, violin, flute and brass play an expressive single line over a faint bed. No drums, wider room, natural rubato. Console: `EchoMusic.play({solo:"violin",mood:"love"})`.
 - Console API for tuning: `EchoMusic.play({mood:"joy",style:"afrobeats"})`, `EchoMusic.exportWav(brief, seconds)`.
+
+## Reminders, time awareness and push notifications
+
+YoEcho knows the current date, time and time zone, and can set reminders from chat ("remind me Friday at 3 to call mum"). Reminders show in menu → **Reminders**, where people can also add them by hand and turn on phone notifications and gentle check-ins.
+
+**One-time setup (needed for notifications when the app is closed)**
+1. The notification tables already exist in the Supabase project **yoecho-push** (created for this; the same SQL is in `supabase-push.sql` if you ever need to recreate it).
+2. In Netlify → Site settings → Environment variables add two variables: `PUSH_SUPABASE_URL` = `https://iriomiqchwcuctbnfhpd.supabase.co` and `PUSH_SUPABASE_KEY` = that project's **anon** key (Supabase → yoecho-push → Project Settings → API → *anon* key). These are kept server-side only. For tighter privacy you can instead use the *service_role* key and remove the "yoecho server access" policies.
+3. Redeploy. The function `push-cron` runs every 2 minutes (set in `netlify.toml`) and sends due reminders and check-ins. Scheduled functions run on published deploys; the notification keys (VAPID) are generated automatically on first use.
+4. Open YoEcho → menu → Reminders → **Turn on**, then **Send a test**.
+
+Notes: on iPhone, YoEcho must first be added to the Home Screen (iOS 16.4+). Without the setup above, reminders still work as in-app alerts while YoEcho is open. Check-ins are opt-in, daytime only in the person's own time zone, spaced out, and skipped if they were just in the app. Push can arrive a minute or two late; it is not meant for anything time-critical like medication.
