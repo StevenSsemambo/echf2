@@ -37,6 +37,7 @@ exports.handler = async (event) => {
       case "reminder_upsert": {
         if (!pid) return bad(400, "profileId needed");
         const rows = (Array.isArray(b.reminders) ? b.reminders : []).slice(0, 50).filter((r) => r && r.id && (r.at || r.due_at)).map((r) => cleanRem(r, pid));
+        if (b.reset) rows.forEach((r) => { r.notified_at = null; });
         if (rows.length) await L.upsert("reminders", rows, "id");
         return ok({ saved: rows.length });
       }

@@ -581,13 +581,35 @@ function stripReminder(t){ return String(t||"").replace(/\n?REMINDER:\{[^\n]*\}[
 const newRemId=()=>{ try{ if(crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return Date.now().toString(36)+Math.random().toString(36).slice(2,9); };
 function pushOn(){ try{ return localStorage.getItem(PUSH_KEY)==="1"; }catch(e){ return false; } }
 async function pushApi(body){ const r=await fetch("/.netlify/functions/push",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.json(); }
-function remServerUpsert(pid,rems){ if(!pid||!pushOn()||!rems.length) return; pushApi({action:"reminder_upsert",profileId:pid,reminders:rems.map(r=>({id:r.id,title:r.title,at:r.at,repeat:r.repeat,tz:r.tz||remTz(),done:!!r.done}))}).catch(()=>{}); }
+function remServerUpsert(pid,rems,reset){ if(!pid||!pushOn()||!rems.length) return; pushApi({action:"reminder_upsert",profileId:pid,reset:!!reset,reminders:rems.map(r=>({id:r.id,title:r.title,at:r.at,repeat:r.repeat,tz:r.tz||remTz(),done:!!r.done}))}).catch(()=>{}); }
 function remServerDelete(pid,id){ if(!pid||!pushOn()) return; pushApi({action:"reminder_delete",profileId:pid,id}).catch(()=>{}); }
 function addReminder(pid,title,at,repeat){
   const r={id:newRemId(),title:String(title).trim().slice(0,160),at:new Date(at).toISOString(),repeat:["daily","weekly","weekdays","weekends"].includes(repeat)?repeat:"none",tz:remTz(),done:false};
-  const l=Rem.list(); l.push(r); Rem.save(l); remServerUpsert(pid,[r]); return r;
+  const l=Rem.list(); l.push(r); Rem.save(l); remServerUpsert(pid,[r],true); return r;
 }
 function removeReminder(pid,id){ Rem.save(Rem.list().filter(r=>r.id!==id)); remServerDelete(pid,id); }
+// The server is the one that fires reminders while the app is closed, so on opening the app take its word on what has already gone off or moved.
+async function syncRemindersFromServer(pid){
+  if(!pid||!pushOn()) return;
+  const r=await pushApi({action:"reminder_list",profileId:pid}); if(!r||!r.reminders) return;
+  const l=Rem.list(), up=[]; let ch=false;
+  r.reminders.forEach(sv=>{
+    const x=l.find(y=>y.id===sv.id);
+    if(!x){ l.push({id:sv.id,title:sv.title,at:sv.at,repeat:sv.repeat||"none",tz:sv.tz,done:!!sv.done}); ch=true; return; }
+    if(sv.done&&!x.done){ x.done=true; ch=true; }
+    else if(!sv.done&&!x.done&&new Date(sv.at)>new Date(x.at)){ x.at=sv.at; ch=true; }
+  });
+  l.forEach(x=>{ if(!x.done&&!r.reminders.some(sv=>sv.id===x.id)) up.push(x); });
+  if(ch) Rem.save(l); if(up.length) remServerUpsert(pid,up,true);
+}
+// Safety net: they clearly asked to be reminded, the model forgot the tag and did not ask a question → read the request out properly.
+async function fallbackReminder(text){
+  try{
+    const out=await callClaude([{role:"user",content:text}],'Extract ONE reminder request from the user\'s message. Reply with ONLY compact JSON and no other words: {"title":"short thing to remind them of, e.g. Call mum","at":"YYYY-MM-DDTHH:MM (their local 24-hour time, worked out from the current date and time) or null if the day or the time was not given","repeat":"none|daily|weekly|weekdays|weekends"}');
+    const m=String(out).match(/\{[\s\S]*\}/); if(!m) return null;
+    const j=JSON.parse(m[0]); if(!j||!j.title||!j.at) return null; return {title:j.title,at:j.at,repeat:j.repeat};
+  }catch(e){ return null; }
+}
 // Runs the REMINDER tags from a reply. Returns what to show under the message.
 function applyReminders(tags,pid){
   const chips=[], errs=[];
@@ -598,9 +620,18 @@ function applyReminders(tags,pid){
       if(hit){ removeReminder(pid,hit.id); chips.push("REMINDER CANCELLED · "+hit.title.slice(0,40)); } else errs.push("I couldn't find a reminder called “"+String(t.cancel).slice(0,40)+"”.");
       continue;
     }
+    if(t.move){
+      const q=String(t.move).toLowerCase(), l=Rem.list(), hit=l.filter(r=>!r.done).find(r=>r.id===t.move||r.title.toLowerCase().includes(q)||q.includes(r.title.toLowerCase())), na=new Date(t.at);
+      if(hit&&!isNaN(na.getTime())&&na.getTime()>Date.now()-60000){ hit.at=na.toISOString(); if(t.title) hit.title=String(t.title).trim().slice(0,160); Rem.save(l); remServerUpsert(pid,[hit],true); chips.push("⏰ MOVED · "+hit.title.slice(0,40)+" → "+fmtWhen(hit.at)); }
+      else errs.push("I couldn't move that reminder — which one, and to when?");
+      continue;
+    }
     const title=String(t.title||"").trim(), at=new Date(t.at);
     if(!title||isNaN(at.getTime())){ errs.push("I couldn't work out the time for that reminder — tell me the day and time again."); continue; }
     if(at.getTime()<Date.now()-60000){ errs.push("That time has already passed — when would you like me to remind you?"); continue; }
+    const norm=x=>String(x).toLowerCase().replace(/[^a-z0-9 ]/g,"").trim();
+    const dup=Rem.pending().find(r=>norm(r.title)===norm(title)&&Math.abs(new Date(r.at)-at)<10*60000);
+    if(dup){ chips.push("⏰ ALREADY SET · "+fmtWhen(dup.at)+" — "+dup.title); continue; }
     const r=addReminder(pid,title,at,t.repeat);
     chips.push("⏰ "+fmtWhen(r.at)+" — "+r.title+(r.repeat!=="none"?" · repeats "+r.repeat:""));
   }
@@ -638,8 +669,15 @@ function RemindersRuntime(){
   useEffect(()=>{
     let tm=null;
     const fire=(title,body)=>{ setToast({title,body}); clearTimeout(tm); tm=setTimeout(()=>setToast(null),15000); };
+    let syncedPid=null, ready=false;
     const check=()=>{
-      const now=Date.now(), pid=window.__echoPid; let list=Rem.list(), ch=false;
+      const now=Date.now(), pid=window.__echoPid;
+      if(pushOn()){
+        if(!pid) return;
+        if(syncedPid!==pid){ syncedPid=pid; ready=false; syncRemindersFromServer(pid).catch(()=>{}).then(()=>{ ready=true; check(); }); }
+        if(!ready) return;
+      }
+      let list=Rem.list(), ch=false;
       list.forEach(r=>{
         if(r.done) return; const due=new Date(r.at).getTime(); if(due>now) return;
         const late=now-due; if(pushOn()&&late<90000) return;      // the server is delivering this one
@@ -660,7 +698,7 @@ function RemindersRuntime(){
       if(m.type==="echo-push-open"&&window.__echoPid) window.dispatchEvent(new CustomEvent("echo-goto",{detail:"chat"}));
     };
     check(); seen();
-    const t1=setInterval(check,15000), t2=setInterval(seen,20*60000), vis=()=>{ if(!document.hidden){ check(); seen(); } };
+    const t1=setInterval(check,15000), t2=setInterval(seen,20*60000), vis=()=>{ if(!document.hidden){ if(pushOn()&&window.__echoPid) syncRemindersFromServer(window.__echoPid).catch(()=>{}).then(check); else check(); seen(); } };
     document.addEventListener("visibilitychange",vis);
     try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener("message",onMsg); }catch(e){}
     window.addEventListener("echo-toast",e=>fire(e.detail.title,e.detail.body));
@@ -1177,7 +1215,7 @@ If user mentions a person by name, include after reply on new line: RELATIONSHIP
 If THIS message contains a profound moment — something the user has never said before, a realisation, a confession, or a turning point — include after reply: ANCHOR:{"theme":"one word","reflection":"one sentence echo of what they said"}
 Only include ANCHOR when truly significant. Not every message. Maybe 1 in 10.
 Music: you can play the person music that you compose live (original, synthesized, endless, never the same twice). ONLY play music when the person asks for it in their latest message (play, put on, music, a song, a beat, "something to listen to"). Never start music on your own, never offer or suggest it, even when they are low or celebrating — just be present. To start music when asked, add on its own last line: MUSIC:{"mood":"joy|hope|love|neutral|sadness|fear|anger|confusion","intent":"match|lift|calm","style":"afrobeats|amapiano|lofi|house|trap|rnb|ambient|cinematic|acoustic","energy":0.5,"note":"why, a few words"}  (style and energy optional). intent: match = mirror their mood, lift = travel gently toward brighter, calm = settle them down. For sadness, fear, anger or anxiety default to lift or calm unless they say they want to sit in it (then match). YOU HAVE FULL CONTROL of music that is playing — whenever they ask for any change, do it with a tag, one per reply: MUSIC:{"cmd":"volume","level":0.4} (absolute 0-1) or MUSIC:{"cmd":"volume","delta":-0.2} (relative: "a bit lower" -0.15, "much quieter" -0.35, "louder" +0.2) · MUSIC:{"cmd":"pause"} / {"cmd":"resume"} · MUSIC:{"cmd":"stop"} · MUSIC:{"cmd":"next"} (fresh piece) · MUSIC:{"cmd":"like"} (save it) · MUSIC:{"cmd":"saved","n":1} (play their liked pieces) · MUSIC:{"cmd":"sleep","minutes":20} (fade out and stop later; 0 cancels) · MUSIC:{"cmd":"steer", ...} with any of: "energy" (-0.5..0.5), "bpm" (relative, e.g. -10), "tempo" (absolute 50-150), "mood", "style", "layers":{"drums":false,"bass":false,"lead":false,"chords":false,"pad":false,"arp":false} (false = remove that part, true = bring it back), "instrument":{"lead":"piano|keys|guitar|sax|violin|flute|kalimba|bells|marimba|brass|strings|synth|organ","bass":"sub|808|pluck|synthbass|log","chords":"...","pad":"..."}, "reset":true (all parts back). Combine several changes in one steer when they ask for several. DJ MIXES: when they ask for a mix / DJ set / non-stop music, send MUSIC:{"cmd":"mix","styles":["afrobeats","amapiano","house"],"minutes":20,"shape":"wave|build|peak|chill|warmup","trans":"blend|quick|cut","moods":["joy"]} (all optional; styles any of the nine; default about 15 minutes) — it is a real DJ set: beat-matched, key-compatible handovers with bass swaps and sweeps, one track flowing into the next; {"cmd":"mixnext"} jumps to the next track in the mix. SOLO PERFORMANCES: when they ask for a solo or one instrument on its own, start with MUSIC:{"mood":"love","solo":"piano|keys|guitar|sax|violin|flute|kalimba|marimba|bells|brass","note":"…"} — a single instrument performs with natural phrasing and room sound. "Volume" and "louder/quieter" mean the loudness (cmd volume), not energy. Only say you changed something if you included the tag; never mention the tag or JSON. When you start music keep your reply to one or two warm lines — the music does the talking. ${musicTaste()}
-REMINDERS & TIME: you know the current date and time (TIME AWARENESS above). When they ask you to remind them of something, add on its own last line: REMINDER:{"title":"Call mum","at":"2026-11-13T15:00","repeat":"none|daily|weekly|weekdays|weekends"} — "at" is their LOCAL time as YYYY-MM-DDTHH:MM (24-hour), worked out from the current date and time ("tomorrow morning" = 09:00, "tonight" = 20:00, "in an hour" = now + 1 hour). If the day or the time is genuinely unclear, ask ONE short question and send no tag. The title is short and in their words. Several tags are allowed (one per line). To cancel one: REMINDER:{"cancel":"call mum"}. Only say a reminder is set if you included the tag, and confirm in one warm line with the day and time. Reminders reach their phone as notifications once they turn them on under Reminders in the menu; if notifications are off, mention that once, gently. Never mention the tag or JSON.
+REMINDERS & TIME — you are the friend who remembers things for them, so they should never have to set reminders by hand. You know the current date and time (TIME AWARENESS above). Whenever they mention, even in passing, something in the FUTURE that they could forget or would want a nudge about — an appointment, deadline, exam, call to make, medication, bill, trip, birthday, meeting, errand or task — take the initiative: (1) if you know what and when, save it straight away without being asked and say so in one warm line ("I'll nudge you Thursday at 1:30, an hour before"); (2) if the day or time is missing, ask ONE short, natural question to get what you need (usually just the time) and send no tag yet — the moment they answer, save it. Never interrogate: one question at a time, and prefer sensible defaults to asking: an event at a stated time → remind 1 hour before (15 minutes before if it is within the next 2 hours); a date with no time → 09:00 that morning (20:00 the evening before for early or important things); "tonight" → 20:00; "tomorrow morning" → 09:00; "later" → ask. Do NOT create reminders for things in the past, hypotheticals, trivial small talk, or something they say they will handle themselves; if they decline, never ask about that item again. When you remind earlier than the event, put the event time in the title ("Dentist at 2:30pm"). To save, add on its own last line: REMINDER:{"title":"Call mum","at":"2026-11-13T15:00","repeat":"none|daily|weekly|weekdays|weekends"} — "at" is the moment to NOTIFY them, in their LOCAL time as YYYY-MM-DDTHH:MM (24-hour), worked out from the current date and time. Titles are the thing itself, short, in their words. Several tags are allowed (one per line). To change a time: REMINDER:{"move":"dentist","at":"2026-11-13T12:30"}; to cancel: REMINDER:{"cancel":"dentist"}. If a similar reminder already exists (see their upcoming reminders) do not add a duplicate — move it instead. Only say a reminder is saved if you included the tag. Reminders reach their phone as notifications once they turn them on under Reminders (⏰ on the Home screen); if notifications are off, mention that once, gently, right after saving the first one. Never mention the tag or JSON.
 Known: Name:${p.name||"?"} Values:${(p.values||[]).join(",")||"-"} Fears:${(p.fears||[]).join(",")||"-"} Goals:${(p.goals||[]).join(",")||"-"}
 ${arc?"Emotional arc: "+arc:""}
 ${anchors.length?"Anchors (significant moments to thread back): "+anchors.slice(-3).map(a=>'"'+a.quote.slice(0,80)+'" — '+a.theme).join(" | "):""}
@@ -2276,7 +2314,11 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
       if(snf&&snf.cmd&&musicAct&&(!mcmd||!mcmd.cmd)) mcmd=snf;   // they asked for a control (volume…) but the model sent a fresh-play tag: do what they asked
       if(!mcmd) mcmd=snf;
       let clean=stripReminder(stripMusic(stripAnchor(stripRelUpdate(stripMood(raw)))));
-      let remMsg=null; try{ const rt=extractReminders(raw); if(rt.length){ remMsg=applyReminders(rt,profileId); if(!clean&&remMsg.chips.length) clean="Done."; } }catch(e){}
+      let remMsg=null; try{
+        let rt=extractReminders(raw);
+        if(!rt.length&&/\bremind me (?:to|about|at|on|in|that|tomorrow|tonight|later|every)\b|\bset (?:a |an )?(?:reminder|alarm)\b|\bdon'?t (?:let me )?forget\b/i.test(text)&&!/\?/.test(clean)){ const fb=await fallbackReminder(text); if(fb) rt=[fb]; }
+        if(rt.length){ remMsg=applyReminders(rt,profileId); if(!clean&&remMsg.chips.length) clean="Done."; }
+      }catch(e){}
       let musicMsg=null;
       if(mcmd){
         try{ musicMsg=await runMusic(mcmd,parseMood(raw)||mood); }catch(e){ musicMsg={error:"I couldn't load the music engine — check your connection and ask again."}; }

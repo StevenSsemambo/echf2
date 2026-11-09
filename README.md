@@ -196,7 +196,7 @@ public/
 
 ## Reminders, time awareness and push notifications
 
-YoEcho knows the current date, time and time zone, and can set reminders from chat ("remind me Friday at 3 to call mum"). Reminders show in menu → **Reminders**, where people can also add them by hand and turn on phone notifications and gentle check-ins.
+YoEcho knows the current date, time and time zone. It sets reminders on its own from conversation: if you mention something coming up ("I have a dentist appointment Thursday"), it asks for any missing detail (usually just the time), saves it, and nudges you at the right moment. Explicit requests ("remind me Friday at 3 to call mum"), moving and cancelling by chat all work too. Reminders show in menu → **Reminders**, where people can also add them by hand and turn on phone notifications and gentle check-ins.
 
 **One-time setup (needed for notifications when the app is closed)**
 1. The notification tables already exist in the Supabase project **yoecho-push** (created for this; the same SQL is in `supabase-push.sql` if you ever need to recreate it).
