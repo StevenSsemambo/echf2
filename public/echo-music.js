@@ -68,16 +68,26 @@
     dorian: [[0, 3, 6, 0], [0, 6, 3, 0], [0, 3, 0, 6], [0, 1, 3, 0]],
     phrygian: [[0, 1, 0, 6], [0, 1, 6, 0], [0, 5, 6, 1], [0, 6, 5, 1]]
   };
+  /* chord qualities as semitones above the chord root, for genres that need real chords (dominant 7ths, m7b5, power chords...) */
+  var QUAL = { maj: [0, 4, 7], min: [0, 3, 7], "7": [0, 4, 7, 10], "9": [0, 4, 7, 10, 14], "13": [0, 4, 10, 14, 21], "7#9": [0, 4, 7, 10, 15], m7: [0, 3, 7, 10], m9: [0, 3, 7, 10, 14], m11: [0, 3, 7, 10, 14, 17],
+               maj7: [0, 4, 7, 11], maj9: [0, 4, 7, 11, 14], "6": [0, 4, 7, 9], m6: [0, 3, 7, 9], m7b5: [0, 3, 6, 10], dim: [0, 3, 6, 9], "5": [0, 7, 12], sus4: [0, 5, 7], add9: [0, 4, 7, 14], "69": [0, 4, 7, 9, 14] };
+  var QUPG = { "7": ["9", "13", "7"], m7: ["m9", "m11", "m7"], maj7: ["maj9", "maj7"], "6": ["69", "6"] };
+  /* the scale a soloist plays over each chord quality */
+  var QSCALE = { maj: [0, 2, 4, 5, 7, 9, 11], maj7: [0, 2, 4, 5, 7, 9, 11], maj9: [0, 2, 4, 5, 7, 9, 11], "6": [0, 2, 4, 5, 7, 9, 11], "69": [0, 2, 4, 5, 7, 9, 11],
+                 "7": [0, 2, 4, 5, 7, 9, 10], "9": [0, 2, 4, 5, 7, 9, 10], "13": [0, 2, 4, 5, 7, 9, 10], "7#9": [0, 2, 4, 5, 7, 9, 10],
+                 min: [0, 2, 3, 5, 7, 9, 10], m7: [0, 2, 3, 5, 7, 9, 10], m9: [0, 2, 3, 5, 7, 9, 10], m11: [0, 2, 3, 5, 7, 9, 10], m6: [0, 2, 3, 5, 7, 9, 10],
+                 m7b5: [0, 1, 3, 5, 6, 8, 10], dim: [0, 2, 3, 5, 6, 8, 9], "5": [0, 2, 4, 5, 7, 9, 10], sus4: [0, 2, 4, 5, 7, 9, 10], add9: [0, 2, 4, 5, 7, 9, 11] };
+  function absChord(rs, q) { return { d: 0, rs: ((rs % 12) + 12) % 12, q: q, kind: q, abs: QUAL[q] || QUAL.maj, degs: null }; }
   /* absolute MIDI notes for a list of degrees, shifted by octaves so their mean sits near `center` */
-  function placeNotes(mode, root, degs, center) {
-    var n = degs.map(function (d) { return root + degSemi(mode, d); }), sum = 0, i;
+  function placeNotes(mode, root, degs, center, semis) {
+    var n = semis ? semis.map(function (x) { return root + x; }) : degs.map(function (d) { return root + degSemi(mode, d); }), sum = 0, i;
     for (i = 0; i < n.length; i++) sum += n[i];
     var shift = Math.round((center - sum / n.length) / 12) * 12;
     return n.map(function (x) { return x + shift; });
   }
   /* voice-leading: pick the inversion that moves least from the previous chord and stays near `center` */
-  function voiceChord(mode, root, degs, center, prev, maxSpread) {
-    var base = placeNotes(mode, root, degs, center).sort(function (a, b) { return a - b; });
+  function voiceChord(mode, root, degs, center, prev, maxSpread, semis) {
+    var base = placeNotes(mode, root, degs, center, semis).sort(function (a, b) { return a - b; });
     var best = null, bestCost = 1e9, inv, i, cand, cost, mean;
     for (inv = 0; inv < base.length; inv++) {
       cand = base.slice();
@@ -101,21 +111,21 @@
   var MOOD_LIST = ["neutral", "joy", "hope", "sadness", "fear", "anger", "love", "confusion"];
   var RECIPES = {
     neutral:   { modes: ["dorian", "ionian", "aeolian"], bpm: [84, 100], energy: .42, bright: .5, space: .5, density: .45, grit: 0, ext: { "7": .35, tri: .35, add9: .3 }, arc: "wave",
-                 styles: { lofi: .3, acoustic: .2, afrobeats: .18, amapiano: .1, house: .1, ambient: .07, rnb: .05 } },
+                 styles: { lofi: .3, acoustic: .2, afrobeats: .18, amapiano: .1, house: .1, ambient: .07, rnb: .05, jazz: .1, pop: .1, funk: .06, hiphop: .06, reggae: .05 } },
     joy:       { modes: ["ionian", "mixolydian", "lydian"], bpm: [104, 124], energy: .82, bright: .85, space: .35, density: .7, grit: 0, ext: { tri: .6, add9: .25, "7": .15 }, arc: "groove",
-                 styles: { afrobeats: .34, amapiano: .24, house: .2, acoustic: .1, lofi: .07, rnb: .05 } },
+                 styles: { afrobeats: .34, amapiano: .24, house: .2, acoustic: .1, lofi: .07, rnb: .05, rocknroll: .14, pop: .16, funk: .1, reggae: .08 } },
     hope:      { modes: ["ionian", "lydian", "dorian"], bpm: [84, 100], energy: .55, bright: .7, space: .6, density: .5, grit: 0, ext: { tri: .45, add9: .35, sus2: .1, "7": .1 }, arc: "story",
-                 styles: { cinematic: .3, acoustic: .3, ambient: .08, afrobeats: .1, house: .08, rnb: .1, lofi: .04 } },
+                 styles: { cinematic: .3, acoustic: .3, ambient: .08, afrobeats: .1, house: .08, rnb: .1, lofi: .04, pop: .18, rock: .08, reggae: .06 } },
     sadness:   { modes: ["aeolian", "dorian"], bpm: [58, 74], energy: .2, bright: .3, space: .85, density: .28, grit: 0, ext: { "7": .4, add9: .3, tri: .3 }, arc: "drift",
-                 styles: { ambient: .3, lofi: .25, cinematic: .2, acoustic: .15, rnb: .1 } },
+                 styles: { ambient: .3, lofi: .25, cinematic: .2, acoustic: .15, rnb: .1, blues: .15, jazz: .1 } },
     fear:      { modes: ["phrygian", "aeolian"], bpm: [66, 84], energy: .3, bright: .25, space: .8, density: .3, grit: 0, ext: { sus2: .3, tri: .3, "7": .2, sus4: .2 }, arc: "drift",
                  styles: { ambient: .5, cinematic: .35, acoustic: .15 } },
     anger:     { modes: ["phrygian", "aeolian"], bpm: [70, 76], energy: .9, bright: .4, space: .2, density: .8, grit: .6, ext: { power: .6, tri: .4 }, arc: "groove",
-                 styles: { trap: .5, house: .2, cinematic: .2, afrobeats: .1 } },
+                 styles: { trap: .5, house: .2, cinematic: .2, afrobeats: .1, rock: .3, hiphop: .12 } },
     love:      { modes: ["ionian", "mixolydian", "dorian"], bpm: [68, 84], energy: .4, bright: .55, space: .65, density: .4, grit: 0, ext: { "7": .45, "9": .2, add9: .2, tri: .15 }, arc: "wave",
-                 styles: { rnb: .4, acoustic: .25, lofi: .15, afrobeats: .1, cinematic: .1 } },
+                 styles: { rnb: .4, acoustic: .25, lofi: .15, afrobeats: .1, cinematic: .1, jazz: .12, pop: .12, reggae: .08, blues: .06 } },
     confusion: { modes: ["dorian", "lydian"], bpm: [78, 92], energy: .35, bright: .5, space: .75, density: .4, grit: 0, ext: { sus2: .35, sus4: .25, "7": .2, "9": .2 }, arc: "drift",
-                 styles: { ambient: .3, lofi: .3, acoustic: .2, cinematic: .2 } },
+                 styles: { ambient: .3, lofi: .3, acoustic: .2, cinematic: .2, jazz: .1 } },
     calm:      { modes: ["ionian", "lydian"], bpm: [56, 68], energy: .16, bright: .45, space: .9, density: .2, grit: 0, ext: { add9: .4, sus2: .3, tri: .3 }, arc: "drift",
                  styles: { ambient: .55, acoustic: .25, cinematic: .2 } }
   };
@@ -143,13 +153,14 @@
     kalimba: { fam: "mallet", b: .7 }, marimba: { fam: "mallet", b: .55 }, bells: { fam: "mallet", b: .85 },
     strings: { fam: "sus", b: .5 }, pad: { fam: "sus", b: .4 }, choir: { fam: "sus", b: .35 },
     flute: { fam: "wind", b: .6 }, brass: { fam: "wind", b: .55 }, synth: { fam: "synth", b: .65 },
-    sax: { fam: "reed", b: .5 }, violin: { fam: "bowed", b: .6 }
+    sax: { fam: "reed", b: .5 }, violin: { fam: "bowed", b: .6 },
+    eguitar: { fam: "pluck", b: .55 }, dguitar: { fam: "dist", b: .4 }, lguitar: { fam: "lead", b: .55 }, hammond: { fam: "keys", b: .4 }, horns: { fam: "wind", b: .6 }, clav: { fam: "keys", b: .7 }
   };
   /* instrument articulation: how much of the written length a note holds */
-  var ARTIC = { keys: .85, pluck: .5, mallet: .5, sus: .96, wind: .92, synth: .8, reed: .93, bowed: .97 };
+  var ARTIC = { dist: .8, lead: .93, keys: .85, pluck: .5, mallet: .5, sus: .96, wind: .92, synth: .8, reed: .93, bowed: .97 };
 
   /* styles: the rhythmic skeleton + instrument palette. Patterns are 16 steps (one bar of 16th notes). */
-  var STYLE_LIST = ["afrobeats", "amapiano", "lofi", "house", "trap", "rnb", "ambient", "cinematic", "acoustic"];
+  var STYLE_LIST = ["afrobeats", "amapiano", "lofi", "house", "trap", "rnb", "ambient", "cinematic", "acoustic", "rocknroll", "rock", "blues", "jazz", "reggae", "funk", "pop", "hiphop"];
   var STYLES = {
     afrobeats: { name: "Afrobeats", level: 1.08, lay: .35, bpm: [96, 108], swing: .22, arc: "groove", harm: 1, drums: 2, kit: "afro", feel: "synco",
       drum: { kick: "x..x..x...x...x.", snare: "....x.......x...", clap: "....x.......x..x", hat: "x.xxx.x.x.xxx.x.", open: ".......x.......x", shaker: "xoxoxoxoxoxoxoxo", cLo: "..x...x...x..x..", cHi: "...x.x....x.x...", rim: "x..x..x.x..x..x.", rimV: .3 },
@@ -196,6 +207,91 @@
       comp: ["0.2.3.2.1.2.3.2.", "0.1.2.3.2.1.2.3.", "0..2.3..1.2.3.2."], bass: ["r.......5.......", "r.....r.5......."], bassMax: 6,
       pal: { pad: ["strings", "pad"], comp: ["guitar", "piano"], lead: ["flute", "violin", "guitar", "kalimba", "piano"], arp: ["guitar", "kalimba"], bass: ["pluck", "sub"] },
       arp: { rate: 2, kind: "alberti", gate: .6 }, duck: 0, delay: .2, tex: { vinyl: 0, rain: 0, air: .08 } },
+
+    /* ── band genres: real chords, real grooves, instruments that belong together ── */
+    rocknroll: { name: "Rock and Roll", firm: 1, level: 1.12, lay: .5, bpm: [138, 152], swing: 0, swing8: .55, arc: "song", harm: 1, drums: 2, kit: "rnr", feel: "shuffle", leadGen: "blues",
+      drum: { kick: "x.......x.......", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: "", shaker: "", cLo: "", cHi: "", tamb: "x...x...x...x..." },
+      comp: ["x.x.x.x.x.x.x.x.", "x...x...x...x...", "x..x..x.x..x..x."], compGen: ["chuck", "chuck", "pat"], bass: ["r.......5.......", "r...r...5...r..."], bassGen: ["boogie", "boogie", "walk", "rootfifth"], bassMax: 4,
+      pal: { pad: ["hammond"], comp: ["eguitar", "piano"], lead: ["lguitar", "sax", "piano"], arp: ["horns"], bass: ["upbass", "ebass"] },
+      bands: [ { pad: "hammond", comp: "eguitar", lead: "lguitar", arp: null, bass: "upbass", ans: "sax" }, { pad: null, comp: "piano", lead: "sax", arp: "horns", bass: "upbass", ans: "lguitar" },
+               { pad: "hammond", comp: "eguitar", lead: "piano", arp: "horns", bass: "ebass", ans: "lguitar" }, { pad: null, comp: "piano", lead: "lguitar", arp: null, bass: "upbass", ans: "sax" } ],
+      stab: ["x.......x.......", "x..x....x..x....", "x...x...x...x..."],
+      progs: [ { m: "mixolydian", seq: [[0,"7"],[0,"7"],[0,"7"],[0,"7"],[5,"7"],[5,"7"],[0,"7"],[0,"7"],[7,"7"],[5,"7"],[0,"7"],[7,"7"]] },
+               { m: "mixolydian", seq: [[0,"7"],[5,"7"],[0,"7"],[0,"7"],[5,"7"],[5,"7"],[0,"7"],[0,"7"],[7,"7"],[5,"7"],[0,"7"],[7,"7"]] },
+               { m: "mixolydian", seq: [[0,"7"],[7,"7"],[5,"7"],[5,"7"],[0,"7"],[7,"7"],[0,"7"],[7,"7"]] },
+               { m: "ionian", seq: [[0,"maj"],[9,"min"],[5,"maj"],[7,"7"]] }, { m: "ionian", seq: [[0,"6"],[5,"maj"],[0,"6"],[7,"7"]] } ],
+      scales: { mixolydian: [0, 3, 4, 5, 7, 9, 10], ionian: [0, 2, 3, 4, 7, 9] }, duck: 0, delay: .12, tex: { vinyl: .12, rain: 0, air: 0 } },
+    rock: { name: "Rock", firm: 1, level: 1.1, lay: .3, bpm: [112, 138], swing: 0, swing8: 0, arc: "song", harm: 1, drums: 2, kit: "rock", feel: "straight", leadGen: "",
+      drum: { kick: "x.......x.x.....", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: "..............x.", shaker: "", cLo: "", cHi: "" },
+      comp: ["x...x...x...x...", "x.xxx.xxx.xxx.xx", "x.x.x.x.x.x.x.x."], compGen: ["power", "riff", "power", "riff"], bass: ["r.r.r.r.r.r.r.r.", "r...r...r...r..."], bassGen: ["root8", "root8", "rootfifth"], bassMax: 2,
+      pal: { pad: ["hammond", "strings"], comp: ["dguitar"], lead: ["lguitar"], arp: ["eguitar"], bass: ["ebass"] },
+      bands: [ { pad: null, comp: "dguitar", lead: "lguitar", arp: null, bass: "ebass", ans: null }, { pad: "hammond", comp: "dguitar", lead: "lguitar", arp: "eguitar", bass: "ebass", ans: "eguitar" },
+               { pad: "strings", comp: "dguitar", lead: "lguitar", arp: null, bass: "ebass", ans: "hammond" }, { pad: null, comp: "eguitar", lead: "lguitar", arp: null, bass: "ebass", ans: "hammond" } ],
+      progs: [ { m: "mixolydian", seq: [[0,"5"],[10,"5"],[5,"5"],[0,"5"]] }, { m: "aeolian", seq: [[0,"5"],[8,"5"],[10,"5"],[0,"5"]] }, { m: "aeolian", seq: [[0,"5"],[10,"5"],[8,"5"],[10,"5"]] },
+               { m: "ionian", seq: [[0,"5"],[7,"5"],[9,"5"],[5,"5"]] }, { m: "ionian", seq: [[9,"5"],[5,"5"],[0,"5"],[7,"5"]] }, { m: "ionian", seq: [[0,"5"],[5,"5"],[7,"5"],[5,"5"]] },
+               { m: "mixolydian", seq: [[0,"5"],[3,"5"],[5,"5"],[0,"5"]] }, { m: "aeolian", seq: [[0,"5"],[3,"5"],[10,"5"],[5,"5"]] } ],
+      scales: { mixolydian: [0, 2, 4, 7, 9, 10], ionian: [0, 2, 4, 7, 9], aeolian: [0, 3, 5, 7, 10] }, duck: 0, delay: .15, tex: { vinyl: 0, rain: 0, air: 0 } },
+    blues: { name: "Blues", firm: 1, level: 1.15, lay: .8, bpm: [68, 94], swing: 0, swing8: .75, arc: "song", harm: 1, drums: 2, kit: "rnr", feel: "shuffle", leadGen: "blues",
+      drum: { kick: "x.......x.......", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: "", shaker: "", cLo: "", cHi: "" },
+      comp: ["x.x.x.x.x.x.x.x.", "x.......x.......", "x..x....x..x...."], compGen: ["chuck", "pat", "pat"], bass: ["r.......5.......", "r.....r.5.....5."], bassGen: ["boogie", "boogie", "walk"], bassMax: 4,
+      pal: { pad: ["hammond"], comp: ["eguitar", "piano"], lead: ["lguitar", "sax"], arp: [], bass: ["upbass", "ebass"] },
+      bands: [ { pad: "hammond", comp: "eguitar", lead: "lguitar", arp: null, bass: "ebass", ans: null }, { pad: null, comp: "piano", lead: "lguitar", arp: null, bass: "upbass", ans: "sax" },
+               { pad: "hammond", comp: "eguitar", lead: "sax", arp: null, bass: "upbass", ans: "lguitar" }, { pad: "hammond", comp: "piano", lead: "lguitar", arp: "horns", bass: "ebass", ans: null } ],
+      stab: ["x.......x.......", "x..x............"],
+      progs: [ { m: "mixolydian", seq: [[0,"7"],[0,"7"],[0,"7"],[0,"7"],[5,"7"],[5,"7"],[0,"7"],[0,"7"],[7,"7"],[5,"7"],[0,"7"],[7,"7"]] },
+               { m: "mixolydian", seq: [[0,"9"],[5,"7"],[0,"9"],[0,"7"],[5,"7"],[5,"7"],[0,"9"],[9,"7"],[2,"m7"],[7,"7"],[0,"7"],[7,"7"]] },
+               { m: "dorian", seq: [[0,"m7"],[0,"m7"],[0,"m7"],[0,"m7"],[5,"m7"],[5,"m7"],[0,"m7"],[0,"m7"],[8,"7"],[7,"7"],[0,"m7"],[7,"7"]] },
+               { m: "mixolydian", seq: [[0,"7"],[7,"7"],[5,"7"],[5,"7"],[0,"7"],[7,"7"],[0,"7"],[7,"7"]] } ],
+      scales: { mixolydian: [0, 3, 5, 6, 7, 10], dorian: [0, 3, 5, 6, 7, 10] }, duck: 0, delay: .18, tex: { vinyl: .1, rain: 0, air: 0 } },
+    jazz: { name: "Jazz", firm: 1, level: 1.2, lay: .9, wobble: .0004, bpm: [100, 142], swing: 0, swing8: .8, arc: "jazz", harm: 1, drums: 2, kit: "jazz", feel: "swing", leadGen: "bebop", drumGen: "jazz", rootless: true,
+      drum: { kick: "x...............", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "", ride: "x...x.x.x...x.x." },
+      comp: ["x.....x.......x.", "..x...x...x...x.", "x..x....x.......", "....x.....x.x...", "x.......x.....x."], compGen: ["pat"], bass: ["r...5...r...5..."], bassGen: ["walk"], bassMax: 4,
+      pal: { pad: [], comp: ["piano", "keys", "eguitar"], lead: ["sax", "brass", "marimba", "eguitar", "piano"], arp: [], bass: ["upbass"] },
+      bands: [ { pad: null, comp: "piano", lead: "sax", arp: null, bass: "upbass", ans: "brass" }, { pad: null, comp: "piano", lead: "brass", arp: null, bass: "upbass", ans: "sax" },
+               { pad: null, comp: "eguitar", lead: "sax", arp: null, bass: "upbass", ans: null }, { pad: null, comp: "piano", lead: "marimba", arp: null, bass: "upbass", ans: "sax" },
+               { pad: "strings", comp: "keys", lead: "sax", arp: null, bass: "upbass", ans: null } ],
+      progs: [ { m: "ionian", seq: [[2,"m7"],[7,"7"],[0,"maj7"],[0,"6"]] }, { m: "ionian", seq: [[0,"maj7"],[9,"m7"],[2,"m7"],[7,"7"]] }, { m: "ionian", seq: [[4,"m7"],[9,"7"],[2,"m7"],[7,"7"]] },
+               { m: "ionian", seq: [[2,"m7"],[7,"7"],[0,"maj7"],[9,"7"]] }, { m: "aeolian", seq: [[2,"m7b5"],[7,"7"],[0,"m7"],[0,"m6"]] }, { m: "ionian", seq: [[0,"maj7"],[5,"maj7"],[4,"m7"],[9,"7"]] },
+               { m: "ionian", seq: [[2,"m7"],[7,"7"],[0,"maj7"],[5,"maj7"],[11,"m7b5"],[4,"7"],[9,"m7"],[9,"m7"]] }, { m: "ionian", seq: [[0,"maj7"],[9,"m7"],[2,"m7"],[7,"7"],[4,"m7"],[9,"7"],[2,"m7"],[7,"7"]] } ],
+      duck: 0, delay: .2, tex: { vinyl: .06, rain: 0, air: 0 } },
+    reggae: { name: "Reggae", firm: 1, level: 1.1, lay: .7, bpm: [70, 84], swing: .18, swing8: 0, arc: "song", harm: 1, drums: 2, kit: "reggae", feel: "smooth", leadGen: "",
+      drum: { kick: "........x.......", snare: "", clap: "", hat: "x.x.x.x.x.x.x.x.", open: "..............x.", shaker: "", cLo: "", cHi: "", rim: "........x.......", rimV: .75, tamb: "..x...x...x...x." },
+      comp: ["..x...x...x...x."], compGen: ["skank"], chop: 1.2, bass: ["r.....r.5.r...o.", "r..r....5...r.5.", "r.......r..r5..."], bassGen: [], bassMax: 5,
+      pal: { pad: ["hammond"], comp: ["eguitar", "clav"], lead: ["keys", "sax", "marimba", "flute"], arp: ["horns"], bass: ["ebass", "upbass"] },
+      bands: [ { pad: "hammond", comp: "eguitar", lead: "keys", arp: "horns", bass: "ebass", ans: null }, { pad: "hammond", comp: "eguitar", lead: "sax", arp: null, bass: "ebass", ans: "flute" },
+               { pad: null, comp: "clav", lead: "marimba", arp: "horns", bass: "ebass", ans: null }, { pad: "hammond", comp: "eguitar", lead: "flute", arp: null, bass: "upbass", ans: null } ],
+      stab: ["..x...x...x...x.", "x...............", "......x......x.."],
+      progs: [ { m: "ionian", seq: [[0,"maj"],[7,"maj"],[9,"min"],[5,"maj"]] }, { m: "ionian", seq: [[0,"maj"],[5,"maj"],[0,"maj"],[7,"maj"]] }, { m: "ionian", seq: [[0,"7"],[5,"7"],[0,"7"],[7,"7"]] },
+               { m: "aeolian", seq: [[0,"min"],[10,"maj"],[8,"maj"],[10,"maj"]] }, { m: "aeolian", seq: [[0,"m7"],[5,"m7"],[7,"7"],[0,"m7"]] }, { m: "ionian", seq: [[9,"min"],[2,"min"],[7,"maj"],[0,"maj"]] } ],
+      scales: { ionian: [0, 2, 4, 7, 9], aeolian: [0, 3, 5, 7, 10] }, duck: 0, delay: .3, tex: { vinyl: 0, rain: 0, air: 0 } },
+    funk: { name: "Funk", firm: 1, level: 1.12, lay: .25, bpm: [96, 114], swing: .1, swing8: 0, arc: "song", harm: 2, drums: 2, kit: "funk", feel: "synco", leadGen: "",
+      drum: { kick: "x..x...x..x.x...", snare: "....x.......x...", clap: "", hat: "xxxxxxxxxxxxxxxx", open: "......x.......x.", shaker: "", cLo: "", cHi: "", cow: "" },
+      comp: ["xx.gx.g.xx.gx.x.", "x.gxgx..x.gxg.x.", "gx.xx.gxx.g.xgx."], compGen: ["pat"], chop: 1.1, bass: ["r..r..b.r.o.r.5.", "r.r...rb..r.o.r.", "r..rr.r.r..5r.b.", "r.....rr.b.r.5.o"], bassGen: [], bassMax: 2,
+      pal: { pad: ["hammond"], comp: ["clav", "eguitar"], lead: ["sax", "lguitar", "keys", "horns"], arp: ["horns"], bass: ["ebass", "synthbass"] },
+      bands: [ { pad: null, comp: "clav", lead: "sax", arp: "horns", bass: "ebass", ans: null }, { pad: "hammond", comp: "eguitar", lead: "lguitar", arp: "horns", bass: "ebass", ans: null },
+               { pad: null, comp: "clav", lead: "keys", arp: "horns", bass: "synthbass", ans: "sax" }, { pad: "hammond", comp: "eguitar", lead: "horns", arp: null, bass: "ebass", ans: "sax" } ],
+      stab: ["x.....x...x.....", "..x...x.x.....x.", "x..x......x.x..."],
+      progs: [ { m: "mixolydian", seq: [[0,"9"],[0,"9"],[5,"9"],[0,"9"]] }, { m: "dorian", seq: [[0,"m7"],[0,"m7"],[5,"7"],[0,"m7"]] }, { m: "dorian", seq: [[0,"m9"],[5,"9"],[0,"m9"],[7,"7#9"]] },
+               { m: "mixolydian", seq: [[0,"9"],[5,"9"],[0,"9"],[7,"9"]] } ],
+      scales: { mixolydian: [0, 2, 4, 5, 7, 9, 10], dorian: [0, 2, 3, 5, 7, 9, 10] }, duck: 0, delay: .12, tex: { vinyl: 0, rain: 0, air: 0 } },
+    pop: { name: "Pop", firm: 1, level: 1.08, lay: .2, bpm: [100, 124], swing: .05, swing8: 0, arc: "song", harm: 1, drums: 2, kit: "classic", feel: "straight", leadGen: "",
+      drum: { kick: "x.......x.x.....", snare: "....x.......x...", clap: "....x.......x...", hat: "x.x.x.x.x.x.x.x.", open: "..x...x...x...x.", shaker: "", cLo: "", cHi: "" },
+      comp: ["x..x..x...x..x..", "x.x.x.x.x.x.x.x.", "x...x...x...x..."], compGen: ["pat"], bass: ["r.r.r.r.r.r.r.r.", "r..r..r...r..r..", "r.....r.r.....5."], bassGen: [], bassMax: 3,
+      pal: { pad: ["pad", "strings"], comp: ["piano", "eguitar", "keys"], lead: ["synth", "piano", "eguitar", "flute", "bells"], arp: ["pluck", "bells"], bass: ["ebass", "synthbass"] },
+      bands: [ { pad: "pad", comp: "piano", lead: "synth", arp: "pluck", bass: "synthbass", ans: "bells" }, { pad: "strings", comp: "eguitar", lead: "piano", arp: "bells", bass: "ebass", ans: "flute" },
+               { pad: "pad", comp: "eguitar", lead: "flute", arp: "pluck", bass: "ebass", ans: "keys" }, { pad: "strings", comp: "piano", lead: "eguitar", arp: null, bass: "ebass", ans: "violin" } ],
+      progs: [ { m: "ionian", seq: [[0,"add9"],[7,"maj"],[9,"min"],[5,"add9"]] }, { m: "ionian", seq: [[9,"min"],[5,"add9"],[0,"maj"],[7,"sus4"]] }, { m: "ionian", seq: [[0,"maj"],[9,"min"],[5,"maj"],[7,"maj"]] },
+               { m: "aeolian", seq: [[0,"min"],[8,"maj"],[3,"maj"],[10,"maj"]] }, { m: "aeolian", seq: [[0,"min"],[10,"maj"],[8,"maj"],[7,"maj"]] }, { m: "ionian", seq: [[5,"maj"],[0,"maj"],[7,"maj"],[9,"min"]] } ],
+      scales: { ionian: [0, 2, 4, 5, 7, 9, 11], aeolian: [0, 2, 3, 5, 7, 8, 10] }, duck: .25, delay: .2, tex: { vinyl: 0, rain: 0, air: 0 } },
+    hiphop: { name: "Hip-hop", firm: 1, level: 1.2, lay: .9, bpm: [84, 96], swing: .52, swing8: 0, arc: "song", harm: 2, drums: 2, kit: "boombap", feel: "sparse", leadGen: "",
+      drum: { kick: "x.....x..x......", snare: "....x.......x...", clap: "", hat: "x.x.x.x.x.x.x.x.", open: "..............x.", shaker: "", cLo: "", cHi: "" },
+      comp: ["x.....x...x.....", "x..x....x.......", "x.....x.....x..."], compGen: ["pat"], bass: ["r.....r..r......", "r.......r.....5.", "r..r......r..5.."], bassGen: [], bassMax: 6,
+      pal: { pad: ["pad", "strings"], comp: ["piano", "keys", "eguitar"], lead: ["keys", "bells", "sax", "flute"], arp: ["bells", "kalimba"], bass: ["sub", "808"] },
+      bands: [ { pad: "pad", comp: "piano", lead: "bells", arp: null, bass: "808", ans: null }, { pad: "strings", comp: "keys", lead: "sax", arp: "kalimba", bass: "sub", ans: null },
+               { pad: "pad", comp: "eguitar", lead: "keys", arp: "bells", bass: "808", ans: "flute" } ],
+      progs: [ { m: "aeolian", seq: [[0,"m7"],[8,"maj7"],[10,"7"],[0,"m7"]] }, { m: "aeolian", seq: [[0,"m9"],[0,"m9"],[5,"m7"],[7,"7"]] }, { m: "dorian", seq: [[0,"m7"],[5,"7"],[0,"m7"],[10,"maj7"]] },
+               { m: "aeolian", seq: [[0,"m7"],[3,"maj7"],[8,"maj7"],[7,"7"]] } ],
+      scales: { aeolian: [0, 3, 5, 7, 10], dorian: [0, 3, 5, 7, 9, 10] }, duck: .1, delay: .22, tex: { vinyl: .25, rain: 0, air: 0 } },
     /* solo: one instrument performing; not in STYLE_LIST (only chosen through brief.solo) */
     solo: { name: "Solo", solo: true, level: 1.25, lay: .6, wobble: .0005, bpm: [58, 84], swing: .08, arc: "solo", harm: 2, drums: 0, kit: "lofi", feel: "medium", pick: true,
       drum: { kick: "", snare: "", clap: "", hat: "", open: "", shaker: "", cLo: "", cHi: "" },
@@ -203,6 +299,7 @@
       pal: { pad: ["pad"], comp: ["piano"], lead: ["piano"], arp: ["piano"], bass: ["piano"] },
       arp: { rate: 2, kind: "alberti", gate: .5 }, duck: 0, delay: .24, tex: { vinyl: 0, rain: 0, air: .06 } }
   };
+  Object.keys(STYLES).forEach(function (k) { if (!STYLES[k].arp) STYLES[k].arp = { rate: 2, kind: "updown", gate: .6 }; });
   /* what each solo instrument needs: polyphonic ones play melody, chords and bass themselves; single-line ones play the melody over a faint bed */
   var SOLO_SETUP = {
     piano: { poly: true, f: { lead: "piano", comp: "piano", arp: "piano", bass: "piano" } },
@@ -226,9 +323,17 @@
     trap: [{ kick: "x.....x...x..x..", hat: "x.xxx.x.xxx.x.xx" }, { kick: "x..x..x.....x...", hat: "x.x.x.xxx.x.x.x." }],
     rnb: [{ kick: "x.....x..x.x....", hat: "x.x.xxx.x.x.xxx." }, { kick: "x...x...x..x....", clap: "........x......x" }],
     acoustic: [{ kick: "x.....x.x.......", rim: "....x.......x..x" }, { kick: "x.......x.x.....", shaker: "xxx.xxx.xxx.xxx." }],
+    rocknroll: [{ kick: "x.....x.x.......", tamb: "x.x.x.x.x.x.x.x." }, { kick: "x..x....x.x.....", snare: "....x.......x..x" }, { kick: "x.......x..x....", hat: "x.xxx.xxx.xxx.xx" }],
+    rock: [{ kick: "x..x..x.x.......", hat: "x.x.x.x.x.x.x.x." }, { kick: "x.x.....x.x.....", hat: "xxxxxxxxxxxxxxxx" }, { kick: "x.......x..x.x..", open: "..x...x...x...x." }, { kick: "x...x...x...x...", snare: "....x.......x..x" }],
+    blues: [{ kick: "x.....x.x.......", hat: "x.x.x.x.x.x.x.x." }, { kick: "x.......x..x....", snare: "....x.......x..x" }],
+    reggae: [{ kick: "x...x...x...x...", snare: "", rim: "........x......." }, { kick: "........x.......", rim: "....x...x...x...", hat: "x.xxx.xxx.xxx.xx" }, { kick: "........x...x...", rim: "........x.......", open: "......x.......x." }],
+    funk: [{ kick: "x..x..x...x..x..", snare: "....x.......x..x" }, { kick: "x.....x.x..x.x..", hat: "x.xxx.xxx.xxx.xx", cow: "x...x...x...x..." }, { kick: "x..x...x.x..x...", open: "..x...x.....x..." }],
+    pop: [{ kick: "x...x...x...x...", hat: "x.x.x.x.x.x.x.x.", clap: "....x.......x..." }, { kick: "x..x....x.x.....", hat: "xxxxxxxxxxxxxxxx" }, { kick: "x.......x..xx...", shaker: "xxxxxxxxxxxxxxxx" }],
+    hiphop: [{ kick: "x..x......x.....", snare: "....x.......x..x" }, { kick: "x.....x...x...x.", hat: "x.xxx.x.x.xxx.x." }, { kick: "x.x.....x.......", clap: "....x.......x..." }],
     cinematic: [{ tom: "......x.x......." }, { tom: "........x.x.x..." }]
   };
   var BASS_ALT = {
+    reggae: ["r.......r..r5...", "r..5..r.....r.o."], funk: ["r.r..rb.r..5r.o.", "r..r.r..rb.r..5."], pop: ["r.r.r.r.5.5.5.5.", "r...r.5.r...r.5."], hiphop: ["r.....5..r.....", "r..r.....r.r..5."],
     afrobeats: ["r..r.r..5..r..a.", "r.r...5.r..5..o."], amapiano: ["r..r..5..r.r..a.", "r.....r.5..r.o.."], lofi: ["r.....5...r...a.", "r..r....5.....o."],
     house: ["..r..r.r..r..r5.", "r...r...r...r.5."], trap: ["r.....r.r.....5.", "r..r.r....r...5."], rnb: ["r.....r.....5.a.", "r...r.....r.5..."], acoustic: ["r.....5.o.....5.", "r...5...r...5..."]
   };
@@ -271,6 +376,32 @@
       { k: "climax", n: 2, e: .95, lead: "varied", arp: .65, drums: 0, bass: true, lift: true },
       { k: "release", n: 2, e: .45, lead: "theme", arp: .3, drums: 0, bass: true }
     ],
+    song: [
+      { k: "intro", n: 1, e: .5, lead: "sparse", arp: .3, drums: 2, bass: true, cut: .7 },
+      { k: "verse", n: 2, e: .62, lead: "call", arp: .4, drums: 2, bass: true, fill: true },
+      { k: "chorus", n: 2, e: .9, lead: "theme", arp: .6, drums: 2, bass: true, fill: true, crash: true },
+      { k: "verse", n: 2, e: .66, lead: "call", arp: .4, drums: 2, bass: true, fill: true },
+      { k: "chorus", n: 2, e: .92, lead: "theme", arp: .6, drums: 2, bass: true, fill: true, crash: true },
+      { k: "solo", n: 2, e: .98, lead: "varied", arp: .3, drums: 2, bass: true, fill: true, crash: true, lift: true },
+      { k: "bridge", n: 1, e: .46, lead: "sparse", arp: .3, drums: 1, bass: true, cut: .8 },
+      { k: "chorus", n: 2, e: 1.0, lead: "theme", arp: .7, drums: 2, bass: true, fill: true, crash: true, lift: true }
+    ],
+    jazz: [
+      { k: "intro", n: 1, e: .4, lead: "none", arp: 0, drums: 1, bass: true, cut: .85 },
+      { k: "head", n: 2, e: .6, lead: "theme", arp: 0, drums: 2, bass: true, fill: true },
+      { k: "solo", n: 2, e: .78, lead: "varied", arp: 0, drums: 2, bass: true, fill: true },
+      { k: "solo", n: 2, e: .92, lead: "varied", arp: 0, drums: 2, bass: true, fill: true, lift: true },
+      { k: "trade", n: 1, e: .85, lead: "call", arp: 0, drums: 2, bass: true, fill: true },
+      { k: "head", n: 2, e: .66, lead: "theme", arp: 0, drums: 2, bass: true, fill: true, crash: true }
+    ],
+    drums: [
+      { k: "groove", n: 1, e: .5, lead: "none", arp: 0, drums: 2, bass: false, fill: true },
+      { k: "verse", n: 2, e: .66, lead: "none", arp: 0, drums: 2, bass: false, fill: true },
+      { k: "build", n: 1, e: .8, lead: "none", arp: 0, drums: 3, bass: false },
+      { k: "chorus", n: 2, e: .95, lead: "none", arp: 0, drums: 2, bass: false, fill: true, crash: true },
+      { k: "break", n: 1, e: .6, lead: "none", arp: 0, drums: 2, bass: false, fill: true },
+      { k: "chorus", n: 2, e: 1.0, lead: "none", arp: 0, drums: 2, bass: false, fill: true, crash: true, lift: true }
+    ],
     wave: [
       { k: "intro", n: 1, e: .4, lead: "none", arp: .3, drums: 1, bass: false, cut: .55 },
       { k: "verse", n: 2, e: .62, lead: "sparse", arp: .4, drums: 2, bass: true },
@@ -286,6 +417,8 @@
     medium: [[0, 3, 6, 10, 12], [0, 2, 6, 8, 12], [0, 4, 6, 10, 14], [2, 6, 8, 11, 14], [0, 3, 8, 11]],
     busy: [[0, 2, 4, 7, 8, 10, 12, 15], [0, 3, 4, 6, 8, 11, 12, 14]],
     straight: [[0, 4, 8, 12], [0, 2, 6, 8, 10, 14], [0, 4, 6, 8, 12]],
+    shuffle: [[0, 2, 4, 8, 10, 12], [0, 4, 6, 8, 12], [2, 4, 6, 8, 12, 14], [0, 2, 4, 6, 8, 12]],
+    swing: [[0, 2, 4, 6, 8, 10, 12, 14], [0, 2, 4, 8, 10, 12], [2, 4, 6, 10, 12, 14]],
     synco: [[0, 3, 6, 10, 13], [3, 6, 10, 12, 15], [0, 3, 7, 10], [0, 3, 6, 8, 11, 14]],
     smooth: [[0, 6, 10], [2, 8, 12], [0, 4, 10, 14], [0, 8, 12]]
   };
@@ -318,7 +451,11 @@
     var intent = String(b.intent || "").toLowerCase();
     o.intent = (intent === "match" || intent === "lift" || intent === "calm") ? intent : "";
     var st = String(b.style || "").toLowerCase().replace(/[^a-z]/g, "");
-    var salias = { lofi: "lofi", lofibeats: "lofi", chill: "lofi", afrobeat: "afrobeats", afro: "afrobeats", piano: "ambient", hiphop: "trap", rb: "rnb", rnb: "rnb", soul: "rnb", orchestral: "cinematic", film: "cinematic", guitar: "acoustic", folk: "acoustic", edm: "house", dance: "house", electronic: "house" };
+    var salias = { lofi: "lofi", lofibeats: "lofi", chill: "lofi", afrobeat: "afrobeats", afro: "afrobeats", piano: "ambient", hiphop: "hiphop", rb: "rnb", rnb: "rnb", soul: "rnb", orchestral: "cinematic", film: "cinematic", guitar: "acoustic", folk: "acoustic", edm: "house", dance: "house", electronic: "house",
+      rocknroll: "rocknroll", rockandroll: "rocknroll", rocknrol: "rocknroll", rockn: "rocknroll", rockabilly: "rocknroll", elvis: "rocknroll", chuckberry: "rocknroll", fifties: "rocknroll", oldies: "rocknroll", twist: "rocknroll",
+      rock: "rock", hardrock: "rock", classicrock: "rock", altrock: "rock", punk: "rock", grunge: "rock", metal: "rock", indie: "rock", band: "rock", blues: "blues", bluesy: "blues", jazz: "jazz", jazzy: "jazz", swing: "jazz", bebop: "jazz", bossa: "jazz", smoothjazz: "jazz",
+      reggae: "reggae", ska: "reggae", dub: "reggae", dancehall: "reggae", funk: "funk", funky: "funk", disco: "funk", groove: "funk", pop: "pop", popmusic: "pop", hiphop2: "hiphop", boombap: "hiphop", rap: "hiphop" };
+    var DRUMS_ALIAS = { drum: 1, drums: 1, drummer: 1, drumsolo: 1, drumkit: 1, drumming: 1, percussion: 1, perc: 1, percussions: 1, beat: 1, beats: 1 };
     st = salias[st] || st;
     o.style = STYLES[st] ? st : "";
     if (typeof b.energy === "number" && isFinite(b.energy)) o.energy = clamp(b.energy, 0, 1);
@@ -327,20 +464,26 @@
     if (typeof b.mode === "string" && MODES[b.mode.toLowerCase()]) o.mode = b.mode.toLowerCase();
     if (b.instruments && typeof b.instruments === "object") {
       o.instruments = {};
-      ["pad", "comp", "lead", "arp", "bass"].forEach(function (r) { var n = b.instruments[r]; if (typeof n === "string") o.instruments[r] = n.toLowerCase(); });
+      ["pad", "comp", "lead", "arp", "bass"].forEach(function (r) { var n = b.instruments[r]; if (typeof n === "string") o.instruments[r] = normInstr(n); });
     }
     if (b.solo) {
       var sn = String(b.solo).toLowerCase().replace(/[^a-z]/g, ""); sn = SOLO_ALIAS[sn] || sn;
-      if (SOLO_SETUP[sn]) { o.solo = sn; o.style = "solo"; }
+      if (DRUMS_ALIAS[sn]) o.drums = true;
+      else if (SOLO_SETUP[sn]) { o.solo = sn; o.style = "solo"; }
     }
+    if (b.drums === true || b.drums === "solo" || DRUMS_ALIAS[String(b.style || "").toLowerCase().replace(/[^a-z]/g, "")]) { o.drums = true; if (!STYLES[o.style] || o.style === "solo") o.style = ""; }
     if (b.seed !== undefined && b.seed !== null && b.seed !== "") o.seed = typeof b.seed === "number" ? (b.seed >>> 0) : strToSeed(b.seed);
     if (typeof b.stageBars === "number" && isFinite(b.stageBars)) o.stageBars = clamp(Math.round(b.stageBars), 8, 64);
     if (typeof b.note === "string") o.note = b.note.slice(0, 80);
     return o;
   }
 
+  var INSTR_ALIAS = { electricguitar: "eguitar", cleanguitar: "eguitar", distortedguitar: "dguitar", distortion: "dguitar", rhythmguitar: "dguitar", leadguitar: "lguitar", electricbass: "ebass", bassguitar: "ebass", fingerbass: "ebass", uprightbass: "upbass", doublebass: "upbass", acousticbass: "upbass",
+                      hammondorgan: "hammond", b3: "hammond", horn: "horns", hornsection: "horns", brasssection: "horns", clavinet: "clav", saxophone: "sax", keyboard: "keys", electricpiano: "keys", rhodes: "keys", string: "strings" };
+  function normInstr(n) { var k = String(n || "").toLowerCase().replace(/[^a-z0-9]/g, ""); return INSTR_ALIAS[k] || k; }
   function pickInstrument(role, style, recipe, rng, taken, forced) {
     var cands = STYLES[style].pal[role].slice();
+    if (!cands.length && !forced) return null;
     if (forced && cands.indexOf(forced) < 0 && (INSTR_META[forced] || role === "bass")) return forced;
     if (forced && cands.indexOf(forced) >= 0) return forced;
     var map = {};
@@ -362,8 +505,12 @@
     pal.lead = pickInstrument("lead", style, recipe, rng, INSTR_META[pal.comp], forced.lead);
     pal.arp = pickInstrument("arp", style, recipe, rng, INSTR_META[pal.lead], forced.arp);
     pal.bass = pickInstrument("bass", style, recipe, rng, null, forced.bass);
+    /* a band: instruments chosen to belong together in this genre (null = that part sits out) */
+    var bands = STYLES[style].bands, band = bands && bands.length ? bands[rng.int(bands.length)] : null;
+    if (band) ["pad", "comp", "lead", "arp", "bass"].forEach(function (r) { if (band[r] !== undefined && !forced[r]) pal[r] = band[r]; });
     /* a second melodic voice that answers the lead and doubles it a third below in big sections */
     pal.ans = null; if (STYLES[style].solo) return pal;
+    if (band && band.ans !== undefined) { pal.ans = band.ans; return pal; }
     for (var tries = 0; tries < 4 && !pal.ans; tries++) { var c = pickInstrument("lead", style, recipe, rng, INSTR_META[pal.lead], null); if (c !== pal.lead && c !== pal.comp && INSTR_META[c]) pal.ans = c; }
     return pal;
   }
@@ -394,14 +541,17 @@
       var prev = stages[i - 1].style;
       stages[i].style = (b.style || stages[i].recipe.styles[prev]) ? prev : pickStyle(stages[i].recipe, rng, null);
     }
+    var DRUM_STYLES = ["rock", "rocknroll", "funk", "jazz", "afrobeats", "reggae", "hiphop", "amapiano", "blues", "pop", "trap"];
+    if (b.drums) { var dst = (b.style && STYLES[b.style] && STYLES[b.style].drums) ? b.style : rng.pick(DRUM_STYLES); stages.forEach(function (sg) { sg.style = dst; }); }
     var recipe0 = stages[0].recipe;
     var forcedI = {}, sk; if (b.instruments) for (sk in b.instruments) forcedI[sk] = b.instruments[sk];
     if (b.solo) { var ss = SOLO_SETUP[b.solo]; for (sk in ss.f) forcedI[sk] = ss.f[sk]; }
-    var mode = b.mode || rng.pick(recipe0.modes);
+    var mode = b.mode || rng.pick(recipe0.modes), sp0 = STYLES[stages[0].style].progs;
+    if (sp0) { var fam = sp0.filter(function (q) { return q.m === mode; }); if (!fam.length) mode = rng.pick(sp0).m; }
     var root = b.key !== undefined ? b.key : rng.pick([0, 2, 3, 5, 7, 9, 9, 10, 2, 7]);
     return {
       seed: seed >>> 0, brief: b, mood: mood, intent: intent, stages: stages, mode: mode, root: root,
-      forced: forcedI, solo: b.solo || "", bpmForce: b.bpm || 0, energyBias: typeof b.energy === "number" ? (b.energy - recipe0.energy) : 0,
+      forced: forcedI, solo: b.solo || "", drums: !!b.drums, bpmForce: b.bpm || 0, energyBias: typeof b.energy === "number" ? (b.energy - recipe0.energy) : 0,
       title: makeTitle(mood === "neutral" && stages.length > 1 ? stages[stages.length - 1].mood : mood, rng)
     };
   }
@@ -411,10 +561,10 @@
    * It is a rule-based "band": a theme (motif) that is developed, chord loops that change between sections,
    * layers that enter and leave with the energy arc, and registers kept apart so instruments do not clash.
    */
-  var LEAD_CENTER = { flute: 74, kalimba: 76, bells: 84, piano: 69, keys: 67, guitar: 66, marimba: 72, strings: 69, brass: 63, sax: 66, violin: 76, synth: 72, organ: 64, pluck: 70, pad: 66, choir: 66 };
+  var LEAD_CENTER = { flute: 74, kalimba: 76, bells: 84, piano: 69, keys: 67, guitar: 66, marimba: 72, strings: 69, brass: 63, sax: 66, violin: 76, synth: 72, organ: 64, pluck: 70, pad: 66, choir: 66, eguitar: 68, dguitar: 60, lguitar: 72, hammond: 66, horns: 64, clav: 66 };
   var ARP_CENTER = { bells: 84, kalimba: 79, pluck: 74, guitar: 70, piano: 74, synth: 76, marimba: 76, keys: 72, strings: 72 };
-  var COMP_CENTER = { guitar: 57, piano: 62, keys: 62, organ: 58, marimba: 64, strings: 58, pad: 58 };
-  var BASS_LOW = { sub: 31, "808": 31, log: 33, pluck: 33, synthbass: 33 };
+  var COMP_CENTER = { eguitar: 55, dguitar: 48, hammond: 58, horns: 60, clav: 66, lguitar: 60, guitar: 57, piano: 62, keys: 62, organ: 58, marimba: 64, strings: 58, pad: 58 };
+  var BASS_LOW = { ebass: 28, upbass: 28, sub: 31, "808": 31, log: 33, pluck: 33, synthbass: 33 };
   var BASE_VEL = { pad: .55, comp: .7, lead: .85, arp: .55, bass: .9 };
 
   function Composer(brief, seed) {
@@ -426,12 +576,15 @@
               padV: null, compV: null, theme: null, progA: null, progB: null, cycle: 0, bias: spec.energyBias, steer: null,
               pal: null, style: null, styleName: "", recipe: null, tex: null, mask: {}, fixed: null, rub: 0 };
     var SOLO = spec.solo ? SOLO_SETUP[spec.solo] : null;
+    if (spec.drums) S.fixed = { pad: false, comp: false, lead: false, arp: false, bass: false };
     if (SOLO) S.fixed = SOLO.poly ? { drums: false, pad: false } : { drums: false, comp: false, arp: false, bass: false };
     var LAYER_KEYS = { drums: "drums", percussion: "drums", perc: "drums", beat: "drums", bass: "bass", bassline: "bass", pad: "pad", pads: "pad", strings: "pad", atmosphere: "pad", comp: "comp", chords: "comp", harmony: "comp", lead: "lead", melody: "lead", arp: "arp", arpeggio: "arp", sparkle: "arp", fx: "fx", effects: "fx" };
     var ROLES_SET = { pad: 1, comp: 1, lead: 1, arp: 1, bass: 1 };
 
     function chooseArc(style, recipe) {
+      if (spec.drums) return "drums";
       if (style.arc === "solo") return "solo";
+      if (style.arc === "song" || style.arc === "jazz") return style.arc;
       if (style.arc === "groove") return "groove";
       if (recipe.arc === "drift") return "drift";
       if (recipe.arc === "story" || style.arc === "story") return "story";
@@ -439,14 +592,25 @@
     }
     function computeBpm(style, recipe) {
       var lo = style.bpm[0], hi = style.bpm[1];
-      var t = lerp((lo + hi) / 2, (recipe.bpm[0] + recipe.bpm[1]) / 2, 0.55);
+      var t = lerp((lo + hi) / 2, (recipe.bpm[0] + recipe.bpm[1]) / 2, style.firm ? .1 : 0.55);
       t = clamp(t, lo, hi) + rng.range(-2.5, 2.5);
       return Math.round(clamp(t, lo - 2, hi + 2));
     }
     function buildProg(degs) {
       return degs.map(function (d) { var kind = rng.weighted(S.recipe.ext); return { d: d, kind: kind, degs: chordDegs(d, kind) }; });
     }
+    function buildAbs(seq) {
+      return seq.map(function (c) { var q = c[1]; if (S.style.rootless && QUPG[q] && rng.chance(.5)) q = rng.pick(QUPG[q]); return absChord(c[0], q); });
+    }
+    function bridgeProg() { return S.style.progs ? buildAbs(rng.pick(S.progPool).seq) : buildProg(rng.pick(PROGS[S.mode])); }
     function makeProgs() {
+      var sp = S.style.progs;
+      if (sp) {
+        var fam = sp.filter(function (q) { return q.m === S.mode; });
+        if (!fam.length) { S.mode = rng.pick(sp).m; fam = sp.filter(function (q) { return q.m === S.mode; }); }
+        var pa = rng.int(fam.length), pb2 = rng.int(fam.length); if (fam.length > 1 && pb2 === pa) pb2 = (pa + 1) % fam.length;
+        S.progPool = fam; S.progA = buildAbs(fam[pa].seq); S.progB = buildAbs(fam[pb2].seq); return;
+      }
       var pool = PROGS[S.mode], a = rng.int(pool.length), b = rng.int(pool.length);
       if (pool.length > 1 && b === a) b = (a + 1) % pool.length;
       S.progA = buildProg(pool[a]); S.progB = buildProg(pool[b]);
@@ -460,14 +624,14 @@
     function enterStage(i, relative) {
       var st = spec.stages[i];
       S.stage = i; S.stageStart = S.barNo; S.recipe = st.recipe; S.styleName = st.style; S.style = STYLES[st.style];
-      if (relative) { var nm = rng.pick(st.recipe.modes); S.root = relativeRoot(S.root, S.mode, nm); S.mode = nm; }
+      if (relative && !S.style.progs) { var nm = rng.pick(st.recipe.modes); S.root = relativeRoot(S.root, S.mode, nm); S.mode = nm; }
       S.pal = makePalette(st.style, st.recipe, rng, spec.forced);
       S.bpmTarget = spec.bpmForce || computeBpm(S.style, st.recipe);
       if (S.barNo === 0) S.bpm = S.bpmTarget;
       S.arcName = chooseArc(S.style, st.recipe);
       S.arcIdx = (i === 0 || S.barNo === 0) ? (spec.skipIntro ? 1 : 0) : 1;   /* later stages skip the intro: the music is already playing */
       S.tex = textures();
-      makeProgs(); S.theme = makeTheme();
+      makeProgs(); S.theme = makeTheme(); S.lines = {}; S.riffs = {};
     }
 
     /* ── melody: one theme per piece/stage, developed bar by bar ── */
@@ -514,8 +678,16 @@
       return o;
     }
     function leadOrigin() { var c = LEAD_CENTER[S.pal.lead] || 70; return placeInRange(S.root, c - 13, c - 2); }
-    function chordPcs(chord) { return chord.degs.map(function (d) { return (S.root + degSemi(S.mode, d)) % 12; }); }
-    function inChord(pcs, deg) { return pcs.indexOf((S.root + degSemi(S.mode, deg)) % 12) >= 0; }
+    function chordRs(c) { return c.rs !== undefined ? c.rs : degSemi(S.mode, c.d); }
+    function chordThird(c) { return c.abs ? c.abs[1] : (degSemi(S.mode, c.degs[1]) - degSemi(S.mode, c.degs[0])); }
+    function chordPcs(chord) { return chord.abs ? chord.abs.map(function (x) { return (S.root + chord.rs + x) % 12; }) : chord.degs.map(function (d) { return (S.root + degSemi(S.mode, d)) % 12; }); }
+    function lscale() { return (S.style.scales && S.style.scales[S.mode]) || MODES[S.mode]; }
+    function ls(d) { var sc = lscale(), n = sc.length, o = Math.floor(d / n); return sc[d - o * n] + 12 * o; }
+    function inChord(pcs, deg) { return pcs.indexOf((S.root + ls(deg)) % 12) >= 0; }
+    function voice(chord, center, prev, spread, rootless) {
+      if (chord.abs) { var semis = chord.abs.map(function (x) { return chord.rs + x; }); if (rootless && semis.length >= 4) semis = semis.slice(1); return voiceChord(S.mode, S.root, null, center, prev, Math.max(spread, 18), semis); }
+      return voiceChord(S.mode, S.root, chord.degs, center, prev, spread);
+    }
     function snapToChord(pcs, deg) {
       if (inChord(pcs, deg)) return deg;
       var order = rng.chance(.5) ? [-1, 1, -2, 2] : [1, -1, 2, -2];
@@ -526,6 +698,8 @@
 
     function leadBar(sec, chord, ci, cb) {
       var mode = sec.lead, out = [];
+      if (!S.pal.lead) return out;
+      if (S.style.leadGen && (mode === "theme" || mode === "varied" || mode === "call")) return genLead(sec, chord, ci, cb, mode);
       if (SOLO && !SOLO.poly && (mode === "call" || (mode === "sparse" && sec.kind !== "intro" && sec.kind !== "bridge"))) mode = "theme";
       if (mode === "none") return out;
       var orig = leadOrigin(), pcs = chordPcs(chord), pb = S.secBar % 4, artic = ARTIC[fam(S.pal.lead)] || .8, v0 = BASE_VEL.lead * sec.dyn, harm = S.style.harm;
@@ -533,8 +707,8 @@
         if ((cb % harm) !== 0 || !rng.chance(.78)) return out;
         var cands = [0, 2, 4, 7, 9].map(function (x) { return x + (rng.chance(.5) ? 0 : 0); }).filter(function (d) { return inChord(pcs, d) || d === 9; });
         var deg = rng.pick(cands.length ? cands : [4]), s = rng.pick([0, 2, 4]);
-        out.push({ s: s, r: "lead", i: S.pal.lead, m: orig + degSemi(S.mode, deg), d: Math.min(harm * 16 - s - 2, 14), v: v0 * .9, p: 1 });
-        if (rng.chance(.35)) out.push({ s: s + 8, r: "lead", i: S.pal.lead, m: orig + degSemi(S.mode, deg + rng.pick([-1, 1, 2])), d: 5, v: v0 * .75, p: 1 });
+        out.push({ s: s, r: "lead", i: S.pal.lead, m: orig + ls(deg), d: Math.min(harm * 16 - s - 2, 14), v: v0 * .9, p: 1 });
+        if (rng.chance(.35)) out.push({ s: s + 8, r: "lead", i: S.pal.lead, m: orig + ls(deg + rng.pick([-1, 1, 2])), d: 5, v: v0 * .75, p: 1 });
         return out;
       }
       if (mode === "call" && (pb % 2) === 1) return out;
@@ -551,33 +725,70 @@
           if (atPhraseEnd && cb >= sec.loopLen - S.style.harm) deg2 = pickStable(pcs, deg2, [0, 7, 14, 2, 4]);
           else if (halfEnd || atPhraseEnd) deg2 = snapToChord(pcs, deg2);
         }
-        deg2 = clamp(deg2, -3, 14);
+        deg2 = clamp(deg2, -3, lscale().length * 2);
         var next = k < n - 1 ? m.on[k + 1] : 16, len = next - step;
         if (k === n - 1) len = Math.min(8, 16 - step);
         var legato = (k === n - 1 && atPhraseEnd) ? 1.12 : .95 + rng() * .1;
         var d = Math.max(1, Math.min(len, 12) * artic * legato);
         if (k === n - 1 && atPhraseEnd && rng.chance(.25)) continue;
-        var nm = orig + degSemi(S.mode, deg2), contour = .9 + .16 * Math.sin(Math.PI * (pb * 16 + step) / 64);
+        var nm = orig + ls(deg2), contour = .9 + .16 * Math.sin(Math.PI * (pb * 16 + step) / 64);
         var evn = { s: step, r: "lead", i: S.pal.lead, m: nm, d: d, v: v0 * (step % 4 === 0 ? 1 : .82) * contour * (1 + (rng() - .5) * .12), p: 1 };
         /* a player slides between close notes and sometimes pushes into a note from beside it */
         if (glidy && prevM !== null && prevM !== nm && Math.abs(prevM - nm) <= 4 && rng.chance(.35)) evn.gl = prevM - nm;
-        else if (step > 0 && step % 4 === 0 && len >= 3 && rng.chance(.09)) out.push({ s: step - .45, r: "lead", i: S.pal.lead, m: lo56(orig + degSemi(S.mode, deg2 + rng.pick([-1, 1]))), d: .5, v: evn.v * .45, p: 3 });
+        else if (step > 0 && step % 4 === 0 && len >= 3 && rng.chance(.09)) out.push({ s: step - .45, r: "lead", i: S.pal.lead, m: lo56(orig + ls(deg2 + rng.pick([-1, 1]))), d: .5, v: evn.v * .45, p: 3 });
         out.push(evn); prevM = nm;
-        if (rich && step % 4 === 0 && rng.chance(.7)) out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + degSemi(S.mode, deg2 - 2)), d: d, v: evn.v * .55, p: 2, ans: 1 });
+        if (rich && step % 4 === 0 && rng.chance(.7)) out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + ls(deg2 - 2)), d: d, v: evn.v * .55, p: 2, ans: 1 });
       }
       return out;
     }
     function lo56(x) { return x < 56 ? x + 12 : x; }
     /* the second voice answers the lead's call: on the bars where the lead rests, it plays the cadence of the theme a step lower */
     function answerBar(sec, chord, pb) {
-      var out = []; if (!S.pal.ans || !sec.layers.ans || sec.lead !== "call" || (pb % 2) !== 1) return out;
+      var out = []; if (!S.pal.ans || !sec.layers.ans || sec.lead !== "call" || (pb % 2) !== 1 || S.style.leadGen) return out;
       var pcs = chordPcs(chord), mm = S.theme.m[pb === 1 ? 3 : 2], c = LEAD_CENTER[S.pal.ans] || 66, orig = placeInRange(S.root, c - 14, c - 3);
       var v0 = BASE_VEL.lead * sec.dyn * .7, art = ARTIC[fam(S.pal.ans)] || .8, half = Math.max(2, Math.ceil(mm.on.length * .7));
       for (var k = 0; k < half && k < mm.on.length; k++) {
         var step = mm.on[k]; if (step > 12) break;
-        var deg = mm.deg[k] - 1; if (step % 4 === 0) deg = snapToChord(pcs, deg); deg = clamp(deg, -3, 14);
+        var deg = mm.deg[k] - 1; if (step % 4 === 0) deg = snapToChord(pcs, deg); deg = clamp(deg, -3, lscale().length * 2);
         var nx = k < half - 1 ? mm.on[k + 1] : Math.min(16, step + 5);
-        out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + degSemi(S.mode, deg)), d: Math.max(1, Math.min(nx - step, 8) * art), v: v0 * (1 + (rng() - .5) * .1), p: 2, ans: 1 });
+        out.push({ s: step, r: "lead", i: S.pal.ans, m: lo56(orig + ls(deg)), d: Math.max(1, Math.min(nx - step, 8) * art), v: v0 * (1 + (rng() - .5) * .1), p: 2, ans: 1 });
+      }
+      return out;
+    }
+
+    /* ── genre lead generators: blues licks and bebop lines ── */
+    var BLUES_ON = [[0, 3, 6], [0, 2, 4, 6], [0, 4, 6, 8], [0, 3, 4, 8, 11], [2, 4, 6, 8, 10], [0, 2, 4, 6, 8, 10, 12, 14], [0, 3, 6, 10, 12], [0, 2, 4, 8], [4, 6, 8, 12, 14], [0, 4, 8, 10, 12]];
+    var SWING_ON = [[0, 2, 4, 6, 8, 10, 12, 14], [0, 2, 4, 6, 8, 10], [2, 4, 6, 8, 10, 12, 14], [0, 4, 6, 8, 12, 14], [0, 2, 6, 8, 10, 14], [0, 2, 4, 8, 10, 12, 14]];
+    function makeLick(pb, dens) {
+      var on = rng.pick(dens > .9 ? BLUES_ON.slice(4, 6).concat(BLUES_ON.slice(8)) : BLUES_ON).slice(), i = rng.pick([4, 5, 6, 7, 8]), ix = [];
+      for (var k = 0; k < on.length; k++) { ix.push(i); i = clamp(i + parseInt(rng.weighted({ "-1": 4, "1": 2.2, "-2": 2, "2": 1, "0": .8, "-3": .6 }), 10), 0, 11); }
+      if (pb === 3) ix[ix.length - 1] = rng.pick([0, 6, 4]);
+      return { on: on, ix: ix };
+    }
+    function makeLine(pb, dens) {
+      var on = rng.pick(SWING_ON).filter(function (s2, j) { return j === 0 || rng.chance(.55 + dens * .4); }), i = rng.pick([3, 4, 5, 6]), dir = rng.chance(.5) ? 1 : -1, ix = [];
+      for (var k = 0; k < on.length; k++) {
+        if (on[k] % 4 === 0) { var m = ((i % 7) + 7) % 7; if (m % 2 === 1) i += dir; }
+        ix.push(i); i += dir * (rng.chance(.72) ? 1 : 2); if (rng.chance(.22) || i > 11 || i < 0) dir = -dir; i = clamp(i, 0, 12);
+      }
+      if (pb === 3) { var l = ((ix[ix.length - 1] % 7) + 7) % 7; ix[ix.length - 1] += rng.pick([0, 2, 4]) - (l % 2 ? 1 : 0) * 0; }
+      return { on: on, ix: ix };
+    }
+    function genLead(sec, chord, ci, cb, mode) {
+      var out = [], pb = S.secBar % 4, kind = S.style.leadGen;
+      if (mode === "call" && (pb % 2) === 1) return out;
+      var key = (mode === "varied" ? "v" : sec.kind) + pb + (mode === "call" ? "c" : ""), ln = mode === "varied" ? null : S.lines[key];
+      if (!ln) { ln = kind === "blues" ? makeLick(pb, mode === "varied" ? 1 : sec.e) : makeLine(pb, mode === "varied" ? 1 : sec.e); if (mode !== "varied") S.lines[key] = ln; }
+      var c = LEAD_CENTER[S.pal.lead] || 70, v0 = BASE_VEL.lead * sec.dyn, art = ARTIC[fam(S.pal.lead)] || .9, n = ln.on.length, k, base, sc;
+      if (kind === "blues") { sc = lscale(); base = placeInRange(S.root, c - 12, c - 1); }
+      else { sc = (chord.q && QSCALE[chord.q]) || MODES.ionian; base = placeInRange((S.root + chordRs(chord)) % 12, c - 12, c - 1); }
+      var lift = (sec.lift && (sec.loop % 2) === 1) ? 12 : 0;
+      for (k = 0; k < n; k++) {
+        var st = ln.on[k], ix = ln.ix[k], len = (k < n - 1 ? ln.on[k + 1] : Math.min(16, st + 6)) - st, o = Math.floor(ix / sc.length), m = base + sc[ix - o * sc.length] + 12 * o + lift;
+        var ev = { s: st, r: "lead", i: S.pal.lead, m: m, d: Math.max(1, Math.min(len, 8) * art * (k === n - 1 ? 1.1 : .96)), v: v0 * (st % 4 === 0 ? 1 : .84) * (1 + (rng() - .5) * .12), p: 1 };
+        if (kind === "blues" && S.pal.lead === "lguitar" && len >= 3 && rng.chance(.34)) ev.gl = -rng.pick([1, 2, 2]);
+        if (kind === "bebop" && st > 0 && st % 4 === 0 && rng.chance(.18)) out.push({ s: st - .5, r: "lead", i: S.pal.lead, m: m - 1, d: .5, v: ev.v * .5, p: 3 });
+        out.push(ev);
       }
       return out;
     }
@@ -589,12 +800,12 @@
 
     /* ── accompaniment ── */
     function padBar(sec, chord, chordStart) {
-      if (!chordStart) return [];
+      if (!chordStart || !S.pal.pad) return [];
       var out = [], v = S.padV, harm = S.style.harm;
       for (var i = 0; i < v.length; i++) out.push({ s: 0, r: "pad", i: S.pal.pad, m: v[i], d: harm * 16 - 1, v: BASE_VEL.pad * sec.dyn * (SOLO ? .5 : 1), p: 1 });
       return out;
     }
-    function compBar(sec, chord, cb) {
+    function compPat(sec, chord, cb) {
       var out = [], pats = S.style.comp, pat = pats[sec.compVar % pats.length], v = S.compV, i, s;
       if (!sec.layers.comp || !pat) return out;
       var art = ARTIC[fam(S.pal.comp)] || .8, base = BASE_VEL.comp * sec.dyn;
@@ -610,14 +821,66 @@
       var hits = []; for (s = 0; s < 16; s++) if (pat.charAt(s) === "x") hits.push(s);
       var strummed = fam(S.pal.comp) === "pluck", spread = strummed ? .14 : .055;
       for (var h = 0; h < hits.length; h++) {
-        var L = (h < hits.length - 1 ? hits[h + 1] : 16) - hits[h], d = Math.max(1, Math.min(L, 8) * art + (fam(S.pal.comp) === "keys" ? 1 : 0)), up = strummed && (h % 2 === 1);
+        var L = (h < hits.length - 1 ? hits[h + 1] : 16) - hits[h], d = S.style.chop ? S.style.chop : Math.max(1, Math.min(L, 8) * art + (fam(S.pal.comp) === "keys" ? 1 : 0)), up = strummed && (h % 2 === 1);
         for (i = 0; i < v.length; i++) { var ii = up ? v.length - 1 - i : i; out.push({ s: hits[h] + i * spread, r: "comp", i: S.pal.comp, m: v[ii], d: d, v: base * (hits[h] % 4 === 0 ? 1 : .8) * (up ? .88 : 1) * (1 + (rng() - .5) * .14), p: 2 }); }
       }
+      for (s = 0; s < 16; s++) if (pat.charAt(s) === "g") for (i = Math.max(0, v.length - 2); i < v.length; i++) out.push({ s: s, r: "comp", i: S.pal.comp, m: v[i], d: .6, v: base * .32 * (1 + (rng() - .5) * .3), p: 3 });
+      return out;
+    }
+    function compBar(sec, chord, cb) {
+      if (!S.pal.comp || !sec.layers.comp) return [];
+      var gens = S.style.compGen, gen = gens ? gens[sec.compVar % gens.length] : "pat";
+      if (gen === "chuck") return chuckBar(sec, chord);
+      if (gen === "power") return powerBar(sec, chord);
+      if (gen === "riff") return riffBar(sec, chord);
+      if (gen === "skank") return skankBar(sec);
+      return compPat(sec, chord, cb);
+    }
+    function lowRoot(chord) { return placeInRange((S.root + chordRs(chord)) % 12, 40, 51); }
+    /* rock and roll rhythm guitar / boogie piano: the alternating "5 to 6" shape on every eighth note */
+    function chuckBar(sec, chord) {
+      var out = [], rootM = lowRoot(chord) + (S.pal.comp === "piano" ? 12 : 0), shapes = [[0, 7], [0, 9], [0, 7], [0, 10]], base = BASE_VEL.comp * sec.dyn;
+      for (var j = 0; j < 8; j++) { var st = j * 2, sh = shapes[j % 4]; for (var q = 0; q < sh.length; q++) out.push({ s: st, r: "comp", i: S.pal.comp, m: rootM + sh[q], d: 1.8, v: base * (st % 4 === 0 ? 1 : .8) * (1 + (rng() - .5) * .14), p: 2 }); }
+      return out;
+    }
+    /* hard rock power chords: sustained hits and palm-muted chugs */
+    function powerBar(sec, chord) {
+      var out = [], rootM = lowRoot(chord), pats = ["x...x...x...x...", "x.xxx.xxx.xxx.xx", "x.x.x.x.x.x.x.x.", "x..x..x.x..x..x."], pi = sec.compVar % pats.length, pat = pats[pi], base = BASE_VEL.comp * sec.dyn;
+      for (var s2 = 0; s2 < 16; s2++) {
+        if (pat.charAt(s2) !== "x") continue;
+        var sus = pi === 0, d = sus ? 3.8 : (s2 % 4 === 0 ? 1.5 : 1.0), vv = base * (s2 % 4 === 0 ? 1 : .72) * (1 + (rng() - .5) * .12);
+        [0, 7, 12].forEach(function (x) { out.push({ s: s2, r: "comp", i: S.pal.comp, m: rootM + x, d: d, v: vv, p: 2 }); });
+      }
+      return out;
+    }
+    var RIFF_R = [[0, 3, 6, 8, 11, 14], [0, 2, 4, 6, 8, 10, 12, 14], [0, 3, 4, 8, 11, 12], [0, 2, 3, 6, 8, 10, 11], [0, 1, 3, 6, 8, 9, 11, 14]];
+    function riffBar(sec, chord) {
+      var out = [], rf = S.riffs[sec.kind];
+      if (!rf) { var on = rng.pick(RIFF_R).slice(), sc = lscale(), iv = on.map(function (x, j) { return j === 0 || rng.chance(.4) ? 0 : rng.pick(sc); }); rf = S.riffs[sec.kind] = { on: on, iv: iv }; }
+      var rootM = lowRoot(chord), base = BASE_VEL.comp * sec.dyn;
+      for (var k = 0; k < rf.on.length; k++) {
+        var st = rf.on[k], nx = k < rf.on.length - 1 ? rf.on[k + 1] : 16, d = Math.max(1, (nx - st) * .8), vv = base * (st % 4 === 0 ? 1.05 : .8), m = rootM + rf.iv[k];
+        out.push({ s: st, r: "comp", i: S.pal.comp, m: m, d: d, v: vv, p: 2 });
+        if (rf.iv[k] === 0 && st % 4 === 0) out.push({ s: st, r: "comp", i: S.pal.comp, m: m + 7, d: d, v: vv * .9, p: 2 });
+      }
+      return out;
+    }
+    /* reggae: the guitar chops the off-beat, short and dry */
+    function skankBar(sec) {
+      var out = [], pat = S.style.comp[0], v = S.compV, base = BASE_VEL.comp * sec.dyn * .95, top = v.slice(-3);
+      for (var s2 = 0; s2 < 16; s2++) if (pat.charAt(s2) === "x") for (var i = 0; i < top.length; i++) out.push({ s: s2 + i * .03, r: "comp", i: S.pal.comp, m: top[i], d: S.style.chop || 1.2, v: base * (1 + (rng() - .5) * .1), p: 2 });
+      return out;
+    }
+    function stabBar(sec) {
+      var out = [], pats = S.style.stab, pat = pats[sec.compVar % pats.length], v = S.compV.slice(), mean = 0, i, s2;
+      for (i = 0; i < v.length; i++) mean += v[i]; mean /= v.length; var sh = Math.round(((LEAD_CENTER[S.pal.arp] || 62) - mean) / 12) * 12; v = v.map(function (x) { return x + sh; });
+      for (s2 = 0; s2 < 16; s2++) if (pat.charAt(s2) === "x") for (i = 0; i < v.length; i++) out.push({ s: s2, r: "arp", i: S.pal.arp, m: v[i], d: 2.2, v: BASE_VEL.arp * sec.dyn * 1.15 * (s2 % 4 === 0 ? 1 : .85), p: 2 });
       return out;
     }
     function arpBar(sec) {
       var cfg = S.style.arp, out = [], i;
-      if (!sec.layers.arp) return out;
+      if (!sec.layers.arp || !S.pal.arp) return out;
+      if (S.style.stab) return stabBar(sec);
       var base = S.compV.slice(), tones = base.concat(base.map(function (x) { return x + 12; })).sort(function (a, b) { return a - b; });
       var c = ARP_CENTER[S.pal.arp] || 74, mean = 0; for (i = 0; i < tones.length; i++) mean += tones[i]; mean /= tones.length;
       var shift = Math.round((c - mean) / 12) * 12; tones = tones.map(function (x) { return x + shift; });
@@ -635,12 +898,37 @@
       }
       return out;
     }
+    function bassGenBar(g, chord, nextChord, rootM, nextM, vb, lastOfChord, cb, harm) {
+      var out = [], third = chordThird(chord), inst = S.pal.bass, sameRoot = chordRs(chord) === chordRs(nextChord);
+      function ev(s2, m, d, v) { out.push({ s: s2, r: "bass", i: inst, m: m, d: d, v: vb * v, p: 1 }); }
+      function approach() { return sameRoot ? rootM + rng.pick([7, 5, 4]) : nextM + (nextM - rootM >= 3 ? -1 : (rng.chance(.5) ? -1 : 1)); }
+      var j;
+      if (g === "boogie") {
+        var P = ((S.secBar % 8) < 4 || rng.chance(.3)) ? [0, third, 7, 9, 10, 9, 7, third] : [0, 0, 7, 7, 9, 9, 10, 7];
+        for (j = 0; j < 8; j++) ev(j * 2, rootM + P[j] - (P[j] > 9 ? 0 : 0), 1.9, j % 2 === 0 ? 1 : .8);
+        if (lastOfChord && !sameRoot && rng.chance(.5)) { out.pop(); ev(14, approach(), 1.9, .85); }
+      } else if (g === "walk") {
+        var n2 = rootM + rng.pick([third, 7, 2, third]), n3 = rootM + rng.pick([7, third, 9, 12]); if (n3 === n2) n3 = rootM + 7;
+        var n4 = lastOfChord ? approach() : rootM + rng.pick([5, 7, 9]);
+        ev(0, rootM, 3.7, 1); ev(4, n2, 3.7, .8); ev(8, n3, 3.7, .85); ev(12, n4, 3.7, .82);
+        if (rng.chance(.12)) ev(13.5, n4 + (n4 > n3 ? -1 : 1), 1, .4);
+      } else if (g === "root8") {
+        for (j = 0; j < 8; j++) { var m = rootM; if (j % 4 === 3 && rng.chance(.3)) m = rootM + 12; else if (j === 5 && rng.chance(.25)) m = rootM + 7; ev(j * 2, m, 1.7, j % 2 === 0 ? 1 : .8); }
+        if (lastOfChord && !sameRoot && rng.chance(.4)) { out.pop(); ev(14, approach(), 1.7, .85); }
+      } else {
+        ev(0, rootM, 3.6, 1); ev(4, rootM + 7, 3.6, .8); ev(8, rootM, 3.6, .9); ev(12, lastOfChord && !sameRoot ? approach() : rootM + (rng.chance(.5) ? 7 : 12), 3.6, .8);
+      }
+      return out;
+    }
     function bassBar(sec, chord, nextChord, cb) {
-      var out = [], pats = S.style.bass.concat(BASS_ALT[S.styleName] || []), pat = pats[sec.bassVar % pats.length], harm = S.style.harm;
-      if (!sec.layers.bass) return out;
-      var lo = BASS_LOW[S.pal.bass] || 33, rootPc = (S.root + degSemi(S.mode, chord.d)) % 12, rootM = placeInRange(rootPc, lo, lo + 11);
-      var nextPc = (S.root + degSemi(S.mode, nextChord.d)) % 12, nextM = placeInRange(nextPc, rootM - 6, rootM + 5);
+      var out = [], gens = S.style.bassGen || [], pats = S.style.bass.concat(BASS_ALT[S.styleName] || []), harm = S.style.harm;
+      if (!sec.layers.bass || !S.pal.bass) return out;
+      var lo = BASS_LOW[S.pal.bass] || 33, rootPc = (S.root + chordRs(chord)) % 12, rootM = placeInRange(rootPc, lo, lo + 11);
+      var nextPc = (S.root + chordRs(nextChord)) % 12, nextM = placeInRange(nextPc, rootM - 6, rootM + 5);
       var lastOfChord = (cb % harm) === harm - 1, vb = BASE_VEL.bass * sec.dyn, max = S.style.bassMax;
+      var total = gens.length + pats.length, pick = sec.bassVar % total;
+      if (pick < gens.length) return bassGenBar(gens[pick], chord, nextChord, rootM, nextM, vb, lastOfChord, cb, harm);
+      var pat = pats[pick - gens.length], third = chordThird(chord);
       if (max >= 16 && pat.length === 16 && pat.replace(/\./g, "").length === 1) {
         if ((cb % harm) === 0) out.push({ s: 0, r: "bass", i: S.pal.bass, m: rootM, d: harm * 16 - 1, v: vb, p: 1 });
         return out;
@@ -649,7 +937,7 @@
       var bp = S.pal.bass, glideOk = bp === "synthbass" || bp === "sub" || bp === "808", prevN = null;
       for (var j = 0; j < steps.length; j++) {
         var st = steps[j], ch = pat.charAt(st), note = rootM;
-        if (ch === "5") note = rootM + 7; else if (ch === "o") note = rootM + 12;
+        if (ch === "5") note = rootM + 7; else if (ch === "o") note = rootM + 12; else if (ch === "b") note = rootM + 10; else if (ch === "3") note = rootM + third; else if (ch === "6") note = rootM + 9;
         else if (ch === "a") note = lastOfChord ? (nextM > rootM ? nextM - 1 : nextM + 1) : rootM + 7;
         var len = (j < steps.length - 1 ? steps[j + 1] : 16) - st;
         var evb = { s: st, r: "bass", i: S.pal.bass, m: note, d: Math.max(1, Math.min(len, max) * .92), v: vb * (j === 0 ? 1 : .82), p: 1 };
@@ -659,9 +947,23 @@
       return out;
     }
 
+    function jazzDrums(out, hit, sec, level, firstBar, lastBar, pb) {
+      var e = sec.e, dyn = sec.dyn, i, ride = "x...x.x.x...x.x.", soft = level === 1 ? .7 : 1;
+      for (i = 0; i < 16; i++) if (ride.charAt(i) === "x") { if ((i === 6 || i === 14) && rng.chance(.1)) continue; hit(i, "perc", "ride", (i % 4 === 0 ? .62 : .44) * soft * (.75 + .3 * dyn), i === 0 && rng.chance(.15) ? { bell: 1 } : null); }
+      hit(4, "perc", "chick", .5 * soft); hit(12, "perc", "chick", .5 * soft);
+      if (rng.chance(.55)) hit(0, "drums", "kick", .22 * soft);
+      if (rng.chance(.35)) hit(8, "drums", "kick", .2 * soft);
+      if (level > 1 && rng.chance(.3 * (.5 + e))) hit(rng.pick([3, 7, 10, 11, 14]), "drums", "kick", .5);
+      var nsn = 0, cand = [3, 6, 7, 10, 11, 14, 15], q; for (q = 0; q < cand.length; q++) if (level > 1 && nsn < 2 && rng.chance(.16 * (.6 + e))) { hit(cand[q], "drums", "snare", .22 + rng() * .2); nsn++; }
+      if (sec.tpl.fill && pb === 3 && !(level === 1) && (lastBar || rng.chance(.5))) {
+        out = out.filter(function (ev) { return !(ev.s >= 12 && ev.k !== "crash" && ev.r !== "fx"); });
+        hit(12, "perc", "ride", .5); hit(12, "drums", "snare", .5); hit(13.33, "drums", "snare", .45); hit(14, "drums", "tom", .6, { n: 1 }); hit(14.67, "drums", "tom", .6, { n: 2 }); hit(15, "drums", "kick", .6);
+      }
+      return out;
+    }
     /* ── drums ── */
     function drumBar(sec, firstBar, lastBar) {
-      var D = S.style.drum, out = [], alts = DRUM_ALT[S.styleName], av = alts ? sec.drumVar % (alts.length + 1) : 0;
+      var dOnly = !!spec.drums, D = S.style.drum, out = [], alts = DRUM_ALT[S.styleName], av = alts ? (sec.drumVar + (dOnly ? Math.floor(S.secBar / 4) : 0)) % (alts.length + 1) : 0;
       if (av > 0) { var D2 = {}, dk; for (dk in D) D2[dk] = D[dk]; for (dk in alts[av - 1]) D2[dk] = alts[av - 1][dk]; D = D2; }
       var _u = [], level = sec.layers.drums, i, s, e = sec.e;
       var dyn = sec.dyn, pb = S.secBar % 4, endOfGroup = (pb === 3);
@@ -677,8 +979,10 @@
       if (sec.tpl.crash && firstBar && level > 0) hit(0, "drums", "crash", .62 * dyn + .2);
       if (sec.tpl.riser && firstBar) out.push({ s: 0, r: "fx", k: "riser", d: sec.bars * 16, v: .5, p: 2 });
       if ((sec.kind === "drop" || sec.kind === "climax") && firstBar) out.push({ s: 0, r: "fx", k: "impact", v: (S.styleName === "cinematic" || S.arcName === "story") ? .8 : .42, p: 1 });
+      if (dOnly && level > 0 && level < 3) level = 2;
       if (level <= 0) return out;
-      var inBuild = level === 3;
+      if (S.style.drumGen === "jazz" && level < 3) return jazzDrums(out, hit, sec, level, firstBar, lastBar, pb);
+      var inBuild = level === 3 && !(dOnly && S.secBar < sec.bars - 2);
       if (inBuild) {
         var bb = S.secBar, last2 = sec.bars - 2;
         if (bb >= last2) {
@@ -697,23 +1001,30 @@
         if (!light && (S.styleName === "lofi" || S.styleName === "rnb") && rng.chance(.14)) hit(rng.pick([3, 7, 11, 15]) + .5, "perc", "hat", .26);
         if (!light) pattern(D.open, "perc", "open", .5 * dyn + .1);
       }
+      if (!light && D.tamb) pattern(D.tamb, "perc", "tamb", .38 * dyn + .1);
+      if (!light && D.cow) pattern(D.cow, "perc", "cow", .42);
+      if (dOnly && e > .4) { var ox = ["shaker", "tamb", "cow", "conga"][sec.drumVar % 4], op = ["x.x.x.x.x.x.x.x.", "..x...x...x...x.", "x..x..x..x..x..x", "x.xx.xx.x.xx.xx."][(sec.drumVar + S.secNo) % 4]; pattern(op, "perc", ox, .4 * dyn + .1, null); }
       if (D.rim) pattern(D.rim, "perc", "rim", D.rimV !== undefined ? D.rimV : .5 * dyn + .1);
       /* ghost notes: very quiet snare taps between the backbeats give a played feel */
-      var GH = { lofi: [2, 7, 10, 15], rnb: [6, 7, 14, 15], afrobeats: [3, 10, 15], amapiano: [], acoustic: [] }[S.styleName];
-      if (!light && GH && D.snare) for (var gi = 0; gi < GH.length; gi++) if (D.snare.charAt(GH[gi]) === "." && rng.chance(.22 * (.6 + e))) hit(GH[gi], "drums", "snare", .15 + rng() * .1);
+      var GH = { lofi: [2, 7, 10, 15], rnb: [6, 7, 14, 15], afrobeats: [3, 10, 15], amapiano: [], acoustic: [], funk: [3, 6, 7, 9, 14, 15], hiphop: [7, 10, 15], rock: dOnly ? [3, 7, 11, 15] : [], pop: dOnly ? [3, 10, 15] : [], rocknroll: [], blues: [] }[S.styleName];
+      if (!light && GH && D.snare) for (var gi = 0; gi < GH.length; gi++) if (D.snare.charAt(GH[gi]) === "." && rng.chance((dOnly ? .4 : S.styleName === "funk" ? .35 : .22) * (.6 + e))) hit(GH[gi], "drums", "snare", .15 + rng() * .1);
       if (D.shaker && (!light || e > .3)) pattern(D.shaker, "perc", "shaker", .46 * dyn + .1);
       if (!light && e > .5) { pattern(D.cLo, "perc", "conga", .6, null); if (D.cHi) pattern(D.cHi, "perc", "conga", .5, null); }
       if (D.tom && (!light || firstBar)) pattern(D.tom, "drums", "tom", .8, null);
       /* ghost kick for movement */
       if (!light && D.kick && S.styleName !== "house" && rng.chance(.16)) { var gh = rng.pick([10, 11, 14, 15]); if (D.kick.charAt(gh) === ".") hit(gh, "drums", "kick", .55); }
       /* fills at the end of a 4-bar group */
-      if (sec.tpl.fill && endOfGroup && !light && (lastBar || rng.chance(.5))) {
+      var fillNow = sec.tpl.fill && !light && ((endOfGroup && (lastBar || dOnly || rng.chance(.5))) || (dOnly && pb === 1 && rng.chance(.4)));
+      if (fillNow) {
         out = out.filter(function (ev) { return !(ev.s >= 12 && ev.r !== "fx" && ev.k !== "crash"); });
-        var tomFill = (S.styleName === "cinematic" || S.recipe === RECIPES.anger) ? true : rng.chance(.3);
-        for (i = 0; i < 4; i++) {
-          if (tomFill) hit(12 + i, "drums", "tom", .6 + i * .1, { n: 3 - i });
-          else hit(12 + i, "drums", "snare", .4 + i * .18);
-        }
+        var rockish = S.styleName === "rock" || S.styleName === "rocknroll" || S.styleName === "blues", ft = rng.int(dOnly ? 5 : 4);
+        if (S.styleName === "cinematic" || S.recipe === RECIPES.anger) ft = 1;
+        if (ft === 1 || (rockish && ft === 0 && rng.chance(.5))) { for (i = 0; i < 4; i++) hit(12 + i, "drums", "tom", .6 + i * .1, { n: 3 - i }); }
+        else if (ft === 2) { hit(12, "drums", "snare", .7); hit(13, "drums", "kick", .75); hit(14, "drums", "snare", .65); hit(14.5, "drums", "tom", .6, { n: 1 }); hit(15, "drums", "tom", .7, { n: 0 }); }
+        else if (ft === 3) { for (i = 0; i < 8; i++) hit(12 + i / 2, "drums", i % 2 ? "tom" : "snare", .45 + i * .07, { n: Math.max(0, 3 - Math.floor(i / 2)) }); }
+        else if (ft === 4) { hit(12, "drums", "kick", .8); hit(12.5, "drums", "snare", .5); hit(13, "drums", "snare", .6); hit(13.5, "drums", "tom", .6, { n: 2 }); hit(14, "drums", "tom", .7, { n: 1 }); hit(14.5, "drums", "tom", .75, { n: 0 }); hit(15, "drums", "snare", .8); }
+        else { for (i = 0; i < 4; i++) hit(12 + i, "drums", "snare", .4 + i * .18); }
+        if (rockish && lastBar) hit(15.5, "drums", "kick", .8);
       } else if (S.style.rolls && rng.chance(.28) && !light) {
         out = out.filter(function (ev) { return !(ev.k === "hat" && ev.s >= 14); });
         for (i = 0; i < 6; i++) hit(14 + i / 3, "perc", "hat", .4 + i * .1);
@@ -743,10 +1054,9 @@
         if (S.cycle % 3 === 0 && rng.chance(.5)) { var rel = rng.pick([7, 5, 2, 0]); if (rel) S.root = (S.root + rel) % 12; }
       }
       S.arcIdx++;
-      var harm = S.style.harm, L = 4 * harm, bars = Math.ceil(tpl.n * 4 / L) * L;
+      var harm = S.style.harm, prog = (tpl.k === "chorus" || tpl.k === "drop" || tpl.k === "climax" || tpl.k === "swell" || tpl.k === "rise") ? S.progB : (tpl.k === "bridge" ? bridgeProg() : S.progA), L = prog.length * harm, bars = Math.ceil(tpl.n * 4 / L) * L;
       var e = clamp(.18 + S.recipe.energy * .8 * (.35 + .65 * tpl.e) + S.bias, .1, 1);
       var dl = tpl.drums; if (S.style.drums === 0) dl = 0; else if (S.style.drums === 1 && dl === 2) dl = 1;
-      var prog = (tpl.k === "chorus" || tpl.k === "drop" || tpl.k === "climax" || tpl.k === "swell" || tpl.k === "rise") ? S.progB : (tpl.k === "bridge" ? buildProg(rng.pick(PROGS[S.mode])) : S.progA);
       S.sec = {
         kind: tpl.k, tpl: tpl, bars: bars, loopLen: L, e: e, dyn: .55 + .45 * e, lead: tpl.lead, lift: !!tpl.lift, prog: prog,
         layers: { comp: S.style.solo ? true : tpl.k === "intro" ? rng.chance(.55) : tpl.k === "break" ? rng.chance(.8) : true, bass: !!tpl.bass && e >= .15, drums: dl, arp: rng.chance(tpl.arp * (.5 + e * .7)) },
@@ -764,12 +1074,12 @@
       if (!S.sec || S.secBar >= S.sec.bars) { startSection(); first = true; }
       var sec = S.sec, harm = S.style.harm, cb = S.secBar % sec.loopLen, ci = Math.floor(cb / harm);
       sec.loop = Math.floor(S.secBar / sec.loopLen);
-      var chord = sec.prog[ci], nextChord = sec.prog[(ci + 1) % 4], chordStart = (cb % harm) === 0;
+      var chord = sec.prog[ci], nextChord = sec.prog[(ci + 1) % sec.prog.length], chordStart = (cb % harm) === 0;
       if (Math.abs(S.bpmTarget - S.bpm) > .01) S.bpm += clamp(S.bpmTarget - S.bpm, -1.5, 1.5);
       if (chordStart || !S.padV) {
         var pc = COMP_CENTER[S.pal.pad] || 54;
-        S.padV = voiceChord(S.mode, S.root, chord.degs, Math.min(pc, 56), S.padV, 14);
-        S.compV = voiceChord(S.mode, S.root, chord.degs, COMP_CENTER[S.pal.comp] || 62, S.compV, 14);
+        S.padV = voice(chord, Math.min(pc, 56), S.padV, 14, false);
+        S.compV = voice(chord, COMP_CENTER[S.pal.comp] || 62, S.compV, 14, S.style.rootless);
       }
       var lastBar = S.secBar === sec.bars - 1, ev = [];
       ev = ev.concat(padBar(sec, chord, chordStart), bassBar(sec, chord, nextChord, cb), compBar(sec, chord, cb), leadBar(sec, chord, ci, cb), answerBar(sec, chord, S.secBar % 4), arpBar(sec), drumBar(sec, S.secBar === 0, lastBar));
@@ -789,12 +1099,12 @@
       else if (tpl.k === "build") cut = lerp(.55, 1, prog);
       else if (tpl.cut) cut = tpl.cut;
       var wet = (S.style.solo ? 1.5 : 1) + ((tpl.k === "break" || tpl.k === "breath" || tpl.k === "bridge") ? .7 : 0) + S.recipe.space * .2;
-      var human = S.style.solo ? 1 : S.styleName === "lofi" ? .85 : (S.styleName === "house" || S.styleName === "trap") ? .12 : .45;
+      var human = S.style.solo ? 1 : spec.drums ? .5 : S.styleName === "jazz" ? .75 : S.styleName === "blues" || S.styleName === "rocknroll" ? .65 : S.styleName === "lofi" ? .85 : (S.styleName === "house" || S.styleName === "trap") ? .12 : .45;
       /* rubato: a solo player breathes with the phrase, easing at phrase ends and drifting slightly otherwise */
       var bpmB = S.bpm;
       if (S.style.solo) { S.rub = clamp(S.rub * .8 + (rng() - .5) * .012, -.03, .03); bpmB = S.bpm * (1 + S.rub - ((S.secBar % 4) === 3 ? .035 : 0) - (lastBar ? .03 : 0)); }
       var bar = {
-        idx: S.barNo, bpm: bpmB, stepDur: 60 / bpmB / 4, barDur: 60 / bpmB * 4, swing: S.style.swing, human: human, events: ev,
+        idx: S.barNo, bpm: bpmB, stepDur: 60 / bpmB / 4, barDur: 60 / bpmB * 4, swing: S.style.swing, swing8: S.style.swing8 || 0, human: human, events: ev,
         lay: S.style.lay || 0,
         mix: { wobble: S.style.wobble || 0, cut: cut, wet: wet, duck: S.style.duck, delay: S.style.delay, tex: S.tex, grit: S.recipe.grit, bright: S.recipe.bright, space: S.recipe.space, level: S.style.level || 1 },
         kit: S.style.kit, sec: { kind: sec.kind, idx: S.secNo, bar: S.secBar, len: sec.bars, e: sec.e }, secStart: first, stage: S.stage, mood: spec.stages[S.stage].mood, style: S.styleName,
@@ -822,7 +1132,7 @@
       if (p.layers && typeof p.layers === "object") for (var lk in p.layers) { var key = LAYER_KEYS[String(lk).toLowerCase()]; if (!key) continue; var on = !(p.layers[lk] === false || p.layers[lk] === "off" || p.layers[lk] === 0); if (on) delete S.mask[key]; else S.mask[key] = false; }
       /* swap the instrument a part uses ("play the lead on piano"); it sticks across sections */
       if (p.instrument && typeof p.instrument === "object") for (var rk in p.instrument) {
-        var role = LAYER_KEYS[String(rk).toLowerCase()] || rk, nm = String(p.instrument[rk]).toLowerCase().replace("saxophone", "sax").replace("keyboard", "keys").replace("electric piano", "keys").replace("string", "strings").replace("stringss", "strings");
+        var role = LAYER_KEYS[String(rk).toLowerCase()] || rk, nm = normInstr(p.instrument[rk]);
         if (ROLES_SET[role] && (INSTR_META[nm] || (role === "bass" && BASS_LOW[nm]))) { S.pal[role] = nm; spec.forced = spec.forced || {}; spec.forced[role] = nm; }
       }
       if ((p.mood && RECIPES[p.mood]) || (p.style && STYLES[p.style])) {
@@ -834,7 +1144,7 @@
     function hold() { spec.bpmForce = S.bpm; S.bpmTarget = S.bpm; }
     function release(nat) { spec.bpmForce = 0; if (nat) S.bpmTarget = clamp(nat, 50, 150); }
     function info() {
-      return { solo: spec.solo || "", root: S.root, modeName: S.mode, seed: seed, title: spec.title, mood: spec.stages[Math.max(0, S.stage)].mood, journey: spec.stages.map(function (s) { return s.mood; }), intent: spec.intent,
+      return { solo: spec.solo || "", drums: !!spec.drums, root: S.root, modeName: S.mode, seed: seed, title: spec.title, mood: spec.stages[Math.max(0, S.stage)].mood, journey: spec.stages.map(function (s) { return s.mood; }), intent: spec.intent,
                style: S.styleName, styleName: S.style ? S.style.name : "", bpm: Math.round(S.bpm), key: NOTE_NAMES[S.root] + " " + MODE_LABEL[S.mode], palette: S.pal, section: S.sec ? S.sec.kind : "", bar: S.barNo, muted: Object.keys(S.mask).filter(function (k) { return S.mask[k] === false; }) };
     }
     return { spec: spec, seed: seed, nextBar: nextBar, steer: steer, info: info, release: release, hold: hold, state: function () { return S; } };
@@ -850,6 +1160,12 @@
     heavy:   { kickStart: 130, kickEnd: 38, kickDecay: .8, snareTone: 170, snareNoise: .7, snareDecay: .28, clapFreq: 1100, hatFreq: 6500, hatDecay: .07 },
     trap:    { kickStart: 120, kickEnd: 34, kickDecay: 1.15, snareTone: 260, snareNoise: .6, snareDecay: .14, clapFreq: 1500, hatFreq: 10500, hatDecay: .03 },
     lofi:    { kickStart: 105, kickEnd: 50, kickDecay: .3, snareTone: 185, snareNoise: .32, snareDecay: .2, clapFreq: 950, hatFreq: 5200, hatDecay: .06 },
+    rock:    { kickStart: 140, kickEnd: 46, kickDecay: .42, snareTone: 195, snareNoise: .85, snareDecay: .26, clapFreq: 1300, hatFreq: 7200, hatDecay: .05 },
+    rnr:     { kickStart: 125, kickEnd: 50, kickDecay: .3, snareTone: 215, snareNoise: .7, snareDecay: .2, clapFreq: 1300, hatFreq: 6800, hatDecay: .06 },
+    jazz:    { kickStart: 115, kickEnd: 52, kickDecay: .26, snareTone: 240, snareNoise: .38, snareDecay: .14, clapFreq: 1200, hatFreq: 6200, hatDecay: .07 },
+    reggae:  { kickStart: 105, kickEnd: 44, kickDecay: .34, snareTone: 300, snareNoise: .3, snareDecay: .1, clapFreq: 1500, hatFreq: 8200, hatDecay: .04 },
+    funk:    { kickStart: 150, kickEnd: 52, kickDecay: .22, snareTone: 225, snareNoise: .62, snareDecay: .13, clapFreq: 1500, hatFreq: 9000, hatDecay: .03 },
+    boombap: { kickStart: 135, kickEnd: 40, kickDecay: .55, snareTone: 195, snareNoise: .6, snareDecay: .17, clapFreq: 1100, hatFreq: 6500, hatDecay: .045 },
     edm:     { kickStart: 185, kickEnd: 46, kickDecay: .36, snareTone: 230, snareNoise: .8, snareDecay: .24, clapFreq: 1650, hatFreq: 9000, hatDecay: .04 }
   };
   /* mixer strips: level, reverb send, delay send, how much the kick ducks them */
@@ -860,10 +1176,10 @@
     arp: { lvl: .5, rv: .38, dy: .3, duck: .6, hp: 280, pk: [6500, 1.5, .8] }, tex: { lvl: .3, rv: 0, dy: 0, duck: 0, hp: 80 }, fx: { lvl: .5, rv: .3, dy: 0, duck: 0, hp: 120 }
   };
   /* per-instrument loudness trim, measured so a middle C at the same velocity sounds equally loud for every instrument */
-  var LOUD = { piano: .76, keys: .9, organ: .57, guitar: 1.1, pluck: 1.25, kalimba: 1.18, marimba: 1.28, bells: 1, strings: 1, pad: 1.05, choir: 1.2, flute: .35, brass: .59, sax: .33, violin: .32, synth: 1.15, sub: .6, "808": .65, synthbass: .5, log: 1.2 };
-  var COST = { piano: 4, keys: 2, organ: 4, guitar: 1, pluck: 2, kalimba: 2, marimba: 3, bells: 3, strings: 4, pad: 4, choir: 5, flute: 3, brass: 3, sax: 4, violin: 4, synth: 3, sub: 2, "808": 2, synthbass: 3, log: 2 };
+  var LOUD = { piano: .76, keys: .9, organ: .57, guitar: 1.1, pluck: 1.25, kalimba: 1.18, marimba: 1.28, bells: 1, strings: 1, pad: 1.05, choir: 1.2, flute: .35, brass: .59, sax: .33, violin: .32, synth: 1.15, sub: .6, "808": .65, synthbass: .5, log: 1.2, eguitar: 1.05, dguitar: .47, lguitar: .45, ebass: .75, upbass: .9, hammond: .36, horns: .49, clav: 2.6 };
+  var COST = { piano: 4, keys: 2, organ: 4, guitar: 1, pluck: 2, kalimba: 2, marimba: 3, bells: 3, strings: 4, pad: 4, choir: 5, flute: 3, brass: 3, sax: 4, violin: 4, synth: 3, sub: 2, "808": 2, synthbass: 3, log: 2, eguitar: 1, dguitar: 4, lguitar: 4, ebass: 3, upbass: 2, hammond: 5, horns: 4, clav: 3 };
   var ROLE_STRIP = { pad: "pad", comp: "comp", lead: "lead", arp: "arp", bass: "bass" };
-  var PERC_STRIP = { hat: "hats", open: "hats", shaker: "hats", conga: "hats", rim: "hats" };
+  var PERC_STRIP = { hat: "hats", open: "hats", shaker: "hats", conga: "hats", rim: "hats", ride: "hats", tamb: "hats", cow: "hats", chick: "hats" };
 
   function makeIR(ctx, sec, dark) {
     var sr = ctx.sampleRate, n = Math.floor(sr * sec), buf = ctx.createBuffer(2, n, sr), ch, i;
@@ -1206,6 +1522,67 @@
       E.tone(t, "sine", f * 1.55, f, .05, .95 * v, .45, lp); E.tone(t, "triangle", f * 2, f * 2, .01, .2 * v, .16, lp);
     };
 
+
+    /* ── band instruments: guitars, basses, organ, horns, clavinet ── */
+    var distCurve = new Float32Array(2048);
+    for (i = 0; i < 2048; i++) { var dx = i / 1024 - 1; distCurve[i] = Math.tanh(dx * 5) * .8; }
+    var odCurve = new Float32Array(2048);
+    for (i = 0; i < 2048; i++) { var ox = i / 1024 - 1; odCurve[i] = Math.tanh(ox * 2.2) * .85; }
+    /* guitar amp: oscillators -> preamp gain -> clipper -> mid hump -> speaker low-pass */
+    function ampGuitar(E, f, t, d, v, o, o1, pre, curve, cut, peak, vib) {
+      var hold = Math.max(.1, d), rel = .12, end = t + hold + rel + .08, g = ctx.createGain(), p = ctx.createGain(), sh = ctx.createWaveShaper(), mid = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter();
+      p.gain.value = pre; sh.curve = curve; mid.type = "peaking"; mid.frequency.value = 1200; mid.gain.value = 4; mid.Q.value = .8;
+      lp.type = "lowpass"; lp.frequency.value = clamp(cut + f * .8, cut, cut + 1500); lp.Q.value = .6;
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(peak * v, t + .005);
+      g.gain.exponentialRampToValueAtTime(peak * v * .55, t + Math.max(.09, hold * .9)); g.gain.exponentialRampToValueAtTime(.0001, t + hold + rel);
+      o1.forEach(function (c) { var os = E.osc(c[0], f * (c[2] || 1), t, end, c[1]); if (vib) E.vib.connect(os.detune); var cg = ctx.createGain(); cg.gain.value = c[3] === undefined ? 1 : c[3]; os.connect(cg); cg.connect(p); });
+      p.connect(sh); sh.connect(mid); mid.connect(lp); lp.connect(g); g.connect(o);
+      if (!E.lite) E.noise(t, .025, "bandpass", Math.min(4000, f * 6), 1.2, .05 * v, .012, o);
+    }
+    INST.eguitar = function (E, f, t, d, v, o) {
+      pluckVoice(E, f, t, d, v, o, .9978, 1.7, .2, 5400, 2.2, .4, .85);
+      if (!E.lite) E.noise(t, .02, "bandpass", Math.min(5000, f * 5), 1.5, .04 * v, .012, o);
+    };
+    INST.dguitar = function (E, f, t, d, v, o) { ampGuitar(E, f, t, d, v, o, [["sawtooth", -6], ["sawtooth", 6], ["square", 0, 1, .35]], 4.5, distCurve, 2600, .34, false); };
+    INST.lguitar = function (E, f, t, d, v, o) { ampGuitar(E, f, t, d, v, o, [["sawtooth", -4], ["triangle", 3, 1, .8], ["sawtooth", 5, 2, .12]], 2.6, odCurve, 3200, .4, true); };
+    INST.ebass = function (E, f, t, d, v, o) {
+      var len = Math.max(.12, d * .95), end = t + len + .14, lp = ctx.createBiquadFilter(), g = ctx.createGain(), cg = ctx.createGain();
+      var a = E.osc("sawtooth", f, t, end), b = E.osc("sine", f, t, end), c = E.osc("triangle", f * 2, t, end);
+      lp.type = "lowpass"; lp.Q.value = 1.2; lp.frequency.setValueAtTime(clamp(f * 14, 500, 1800), t); lp.frequency.exponentialRampToValueAtTime(clamp(f * 3.2, 160, 600), t + Math.min(.22, len));
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.8 * v, t + .006); g.gain.exponentialRampToValueAtTime(.5 * v, t + Math.min(.3, len)); g.gain.setValueAtTime(.5 * v, t + len * .85); g.gain.exponentialRampToValueAtTime(.0001, t + len + .09);
+      cg.gain.value = .18; a.connect(lp); lp.connect(g); b.connect(g); c.connect(cg); cg.connect(g); g.connect(o);
+    };
+    INST.upbass = function (E, f, t, d, v, o) {
+      pluckVoice(E, f, t, d, v, o, .9955, 1.5, .12, 1100, 1.1, .3, 1.15);
+      var sub = ctx.createOscillator(), sg = ctx.createGain(), hold = Math.max(.2, d);
+      sub.type = "sine"; sub.frequency.value = f; sg.gain.setValueAtTime(.0001, t); sg.gain.linearRampToValueAtTime(.3 * v, t + .012); sg.gain.exponentialRampToValueAtTime(.0001, t + hold + .12);
+      sub.connect(sg); sg.connect(o); sub.start(t); sub.stop(t + hold + .2);
+      if (!E.lite) E.noise(t, .04, "bandpass", 220, 1.5, .18 * v, .02, o);
+    };
+    INST.hammond = function (E, f, t, d, v, o) {
+      var hold = Math.max(.15, d), g = ctx.createGain(), sh = ctx.createWaveShaper(), sg = ctx.createGain();
+      var bars = E.lite ? [[1, 1], [2, .7], [.5, .5]] : [[.5, .6], [1.5, .35], [1, 1], [2, .8], [3, .5], [4, .35]];
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.19 * v, t + .008); g.gain.setValueAtTime(.19 * v, t + hold); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .09);
+      sh.curve = odCurve; sg.gain.value = .35; g.connect(o); g.connect(sh); sh.connect(sg); sg.connect(o);
+      bars.forEach(function (b) { var os = E.osc("sine", f * b[0], t, t + hold + .2), bg = ctx.createGain(); E.vib.connect(os.detune); bg.gain.value = b[1]; os.connect(bg); bg.connect(g); });
+      var pc = E.osc("sine", f * 3, t, t + .25), pg = ctx.createGain(); pg.gain.setValueAtTime(.5, t); pg.gain.exponentialRampToValueAtTime(.0001, t + .16); pc.connect(pg); pg.connect(g);
+      if (!E.lite) E.noise(t, .02, "highpass", 3500, 1, .04 * v, .01, o);
+    };
+    INST.horns = function (E, f, t, d, v, o) {
+      var hold = Math.max(.12, d * .9), end = t + hold + .2, lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      lp.type = "lowpass"; lp.Q.value = 1.1; lp.frequency.setValueAtTime(500, t); lp.frequency.exponentialRampToValueAtTime(Math.min(5200, 1300 + f * 4.5), t + .05); lp.frequency.exponentialRampToValueAtTime(Math.min(3200, 900 + f * 2.5), t + hold);
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.3 * v, t + .02); g.gain.setValueAtTime(.26 * v, t + hold); g.gain.exponentialRampToValueAtTime(.0001, t + hold + .1);
+      (E.lite ? [0] : [-9, 0, 9]).forEach(function (dt) { var os = E.osc("sawtooth", f, t, end, dt); E.vib.connect(os.detune); os.connect(lp); });
+      lp.connect(g); g.connect(o);
+    };
+    INST.clav = function (E, f, t, d, v, o) {
+      var dec = clamp(d * .8, .07, .35), a = E.osc("sawtooth", f, t, t + dec + .1), b = E.osc("square", f * 2.003, t, t + dec + .1), bg = ctx.createGain(), lp = ctx.createBiquadFilter(), pk = ctx.createBiquadFilter(), g = ctx.createGain();
+      lp.type = "lowpass"; lp.Q.value = 1.4; lp.frequency.setValueAtTime(5200, t); lp.frequency.exponentialRampToValueAtTime(1400, t + .07);
+      pk.type = "peaking"; pk.frequency.value = 2200; pk.gain.value = 5; pk.Q.value = 1;
+      bg.gain.value = .25; g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.55 * v, t + .002); g.gain.exponentialRampToValueAtTime(.0001, t + dec);
+      a.connect(lp); b.connect(bg); bg.connect(lp); lp.connect(pk); pk.connect(g); g.connect(o);
+    };
+
     /* ── drums ── */
     var DRUM = {
       kick: function (E, t, v, K, o) { E.tone(t, "sine", K.kickStart, K.kickEnd, .12, v, K.kickDecay, o); E.tone(t, "sine", K.kickStart * 2.2, K.kickStart * .9, .03, .4 * v, .07, o); E.noise(t, .03, "bandpass", 2800, 1, .3 * v, .012, o); },
@@ -1220,6 +1597,13 @@
       shaker: function (E, t, v, K, o) { E.playSample(E.noiseSample("shaker", [{ at: 0, sec: .1, type: "bandpass", fc: 6500, q: 1, decay: .055, peak: .22 }]), t, v, o); },
       conga: function (E, t, v, K, o, ev) { var hi = (ev && ev.s % 2 === 1), f = hi ? 330 : 220; E.tone(t, "sine", f * 1.15, f, .04, .6 * v, .2, o); E.noise(t, .04, "bandpass", 1800, 1.4, .12 * v, .02, o); },
       tom: function (E, t, v, K, o, ev) { var f = [200, 150, 110, 78][clamp((ev && ev.n) !== undefined ? ev.n : 2, 0, 3)]; E.tone(t, "sine", f * 1.45, f, .09, .85 * v, .55, o); E.noise(t, .05, "bandpass", 900, 1, .1 * v, .03, o); },
+      ride: function (E, t, v, K, o, ev) {
+        E.playSample(E.noiseSample("ride", [{ at: 0, sec: .9, type: "highpass", fc: 6200, q: .6, decay: .5, peak: .2 }]), t, v, o);
+        E.tone(t, "sine", 3400, 3400, .001, .07 * v * (ev && ev.bell ? 2 : 1), .35, o); E.tone(t, "sine", 5100, 5100, .001, .05 * v, .28, o); E.tone(t, "sine", 2270, 2270, .001, .05 * v, .5, o);
+      },
+      tamb: function (E, t, v, K, o) { E.playSample(E.noiseSample("tamb", [{ at: 0, sec: .12, type: "highpass", fc: 7500, q: 1, decay: .06, peak: .2 }, { at: .025, sec: .1, type: "bandpass", fc: 9500, q: 2, decay: .05, peak: .12 }]), t, v, o); },
+      cow: function (E, t, v, K, o) { E.tone(t, "square", 587, 587, .001, .11 * v, .1, o); E.tone(t, "square", 845, 845, .001, .09 * v, .08, o); },
+      chick: function (E, t, v, K, o) { E.playSample(E.noiseSample("chick", [{ at: 0, sec: .06, type: "bandpass", fc: 5200, q: 1.2, decay: .03, peak: .3 }]), t, v, o); },
       crash: function (E, t, v, K, o) { E.playSample(E.noiseSample("crash", [{ at: 0, sec: 2.2, type: "highpass", fc: 3500, q: .6, decay: 1.7, peak: .35 }]), t, v, o); }
     };
     E.drum = function (ev, t, bar) {
@@ -1290,6 +1674,7 @@
     function stepTime(s, bar) {
       var base = s * bar.stepDur, r = Math.round(s);
       if (bar.swing > 0 && r % 2 === 1 && Math.abs(s - r) < .2) base += bar.swing * .333 * bar.stepDur;
+      if (bar.swing8 > 0 && r % 4 === 2 && Math.abs(s - r) < .2) base += bar.swing8 * .667 * bar.stepDur;
       return base;
     }
     /* where each part sits against the grid (seconds, scaled by the style's "lay-back"): kick pushes, snare and lead lean back */

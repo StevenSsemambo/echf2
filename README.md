@@ -205,3 +205,24 @@ YoEcho knows the current date, time and time zone. It sets reminders on its own 
 4. Open YoEcho → menu → Reminders → **Turn on**, then **Send a test**.
 
 Notes: on iPhone, YoEcho must first be added to the Home Screen (iOS 16.4+). Without the setup above, reminders still work as in-app alerts while YoEcho is open. Check-ins are opt-in, daytime only in the person's own time zone, spaced out, and skipped if they were just in the app. Push can arrive a minute or two late; it is not meant for anything time-critical like medication.
+
+## Music: genre bands (v7)
+
+Besides afrobeats, amapiano, lo-fi, house, trap, R&B, ambient, cinematic and acoustic, the engine now plays real **band genres**, each with its own chords, groove, bass line, lead style and instrument "band":
+
+| Genre | What makes it that genre |
+|---|---|
+| Rock and Roll | shuffle feel, 12-bar blues changes, rhythm guitar/piano "5-6" boogie, boogie-woogie bass, sax/guitar blues licks |
+| Rock | straight 8ths, power chords (palm-muted chugs, riffs), driving bass, pentatonic lead guitar, big fills + crashes |
+| Blues | slow shuffle, 12-bar (major, minor, quick-change), blues-scale licks with bends, organ |
+| Jazz | swing ride + hi-hat chick, walking bass, rootless 7th/9th/13th piano comping, bebop lines on sax/trumpet/vibes, head-solo-trade form |
+| Reggae | one-drop, off-beat guitar skank, organ bubble, melodic bass |
+| Funk | 16th-note clavinet/guitar chops with ghost notes, syncopated bass, horn stabs, ghost-note snare |
+| Pop | four-chord progressions, bands of piano/guitar/synth/strings |
+| Hip-hop | boom-bap kit, swung 16ths, minor-7th loops, vinyl |
+
+New instruments: electric guitar (`eguitar`), distorted guitar (`dguitar`), lead guitar (`lguitar`), electric bass (`ebass`), upright bass (`upbass`), Hammond organ (`hammond`), `horns`, `clav`. New drum voices: ride, tambourine, cowbell, pedal hi-hat.
+
+**Drum solos**: `{"solo":"drums","style":"rock"}` plays continuous drums (no breaks), with fills, ghost notes and percussion layers that change every few bars.
+
+Every piece also picks a band (a set of instruments that belong together) and one of several progressions, grooves, bass lines and song forms per seed, so pieces differ much more than before.
