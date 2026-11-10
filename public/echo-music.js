@@ -907,7 +907,7 @@
       var strummed = fam(S.pal.comp) === "pluck", spread = strummed ? .14 : .055;
       for (var h = 0; h < hits.length; h++) {
         var L = (h < hits.length - 1 ? hits[h + 1] : 16) - hits[h], d = S.style.chop ? S.style.chop : Math.max(1, Math.min(L, 8) * art + (fam(S.pal.comp) === "keys" ? 1 : 0)), up = strummed && (h % 2 === 1);
-        for (i = 0; i < v.length; i++) { var ii = up ? v.length - 1 - i : i; out.push({ s: hits[h] + i * spread, r: "comp", i: S.pal.comp, m: v[ii], d: d, v: base * (hits[h] % 4 === 0 ? 1 : .8) * (up ? .88 : 1) * (1 + (rng() - .5) * .14), p: 2 }); }
+        for (i = 0; i < v.length; i++) { var ii = up ? v.length - 1 - i : i; out.push({ s: hits[h] + i * spread, r: "comp", i: S.pal.comp, m: v[ii], d: d, v: base * (hits[h] % 4 === 0 ? 1 : .8) * (up ? .88 : 1) * (strummed ? (up ? .82 + .18 * i / Math.max(1, v.length - 1) : 1 - .18 * i / Math.max(1, v.length - 1)) : 1) * (1 + (rng() - .5) * .14), p: 2 }); }
       }
       for (s = 0; s < 16; s++) if (pat.charAt(s) === "g") for (i = Math.max(0, v.length - 2); i < v.length; i++) out.push({ s: s, r: "comp", i: S.pal.comp, m: v[i], d: .6, v: base * .32 * (1 + (rng() - .5) * .3), p: 3 });
       return out;
@@ -1158,6 +1158,17 @@
       S.secStartBarNo = S.barNo;
     }
 
+    /* what a band does without thinking: bass leans into the kick, hats breathe (strong/weak), a phrase swells across its four bars */
+    function humanize(ev) {
+      var kicks = {}, i, e, pb = S.secBar % 4, swell = 1 + .025 * pb;
+      for (i = 0; i < ev.length; i++) { e = ev[i]; if (e.r === "drums" && e.k === "kick") kicks[Math.round(e.s)] = 1; }
+      for (i = 0; i < ev.length; i++) {
+        e = ev[i]; var r = Math.round(e.s);
+        if (e.r === "bass") e.v *= S.style.solo ? 1 : (kicks[r] ? 1.1 : .93);
+        else if (e.r === "perc" && (e.k === "hat" || e.k === "ride" || e.k === "tamb")) e.v *= (r % 4 === 0 ? 1.06 : r % 2 === 0 ? .96 : .86) * (pb === 3 ? 1.08 : 1);
+        else if (e.r === "pad" || e.r === "comp" || e.r === "arp" || e.r === "lead") e.v *= swell;
+      }
+    }
     function nextBar() {
       var first = false;
       if (S.stage < 0) { enterStage(0, false); }
@@ -1182,6 +1193,7 @@
       if (hasMask) ev = ev.filter(function (e) { var kk = (e.r === "drums" || e.r === "perc") ? "drums" : e.r; return mk[kk] !== false && !(fxm && fxm[kk] === false && e.r !== "fx"); });
       if (S.secBar === 0 && (sec.kind === "break" || sec.kind === "breath" || sec.kind === "bridge")) ev.push({ s: 0, r: "fx", k: "fall", d: 12, v: .4, p: 2 });
       if (S.style.solo) ev = ev.filter(function (e) { return e.r !== "fx"; });
+      humanize(ev);
       ev.sort(function (a, b) { return a.s - b.s; });
       /* mix automation: filter opens through intros and builds, closes in breaks */
       var cut = 1, tpl = sec.tpl, prog = S.secBar / sec.bars;
@@ -1625,7 +1637,7 @@
       lp.type = "lowpass"; lp.frequency.value = clamp(cut + f * .8, cut, cut + 1500); lp.Q.value = .6;
       g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(peak * v, t + .005);
       g.gain.exponentialRampToValueAtTime(peak * v * .55, t + Math.max(.09, hold * .9)); g.gain.exponentialRampToValueAtTime(.0001, t + hold + rel);
-      (E.lite ? o1.slice(0, 2) : o1).forEach(function (c) { var os = E.osc(c[0], f * (c[2] || 1), t, end, c[1]); if (vib) E.vib.connect(os.detune); var cg = ctx.createGain(); cg.gain.value = c[3] === undefined ? 1 : c[3]; os.connect(cg); cg.connect(p); });
+      (E.lite ? o1.slice(0, 2) : o1).forEach(function (c) { var os = E.osc(c[0], f * (c[2] || 1), t, end, c[1]); if (vib && hold > .4) { var vg = ctx.createGain(); vg.gain.setValueAtTime(0, t); vg.gain.setValueAtTime(0, t + .18); vg.gain.linearRampToValueAtTime(1, t + .5); E.vib.connect(vg); vg.connect(os.detune); } var cg = ctx.createGain(); cg.gain.value = c[3] === undefined ? 1 : c[3]; os.connect(cg); cg.connect(p); });
       p.connect(sh); sh.connect(mid); mid.connect(lp); lp.connect(g); g.connect(o);
       if (!E.lite) E.noise(t, .025, "bandpass", Math.min(4000, f * 6), 1.2, .05 * v, .012, o);
     }
