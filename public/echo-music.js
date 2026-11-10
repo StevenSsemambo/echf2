@@ -431,6 +431,70 @@
   loadTaste();
   function tasteWeight(style) { var s = taste.styles[style] || 0; return clamp(1 + 0.3 * s, 0.3, 2.2); }
 
+
+  /* ═══════════════ AI composition plans ═══════════════
+   * The chat model can write a plan (key, chords per bar, sections, instruments, feel, motif). parsePlan validates and repairs it;
+   * anything wrong is clamped or dropped, and a plan that does not hold together returns null so the normal composer plays instead. */
+  var PLAN_KINDS = { intro: 1, verse: 1, chorus: 1, solo: 1, bridge: 1, "break": 1, build: 1, drop: 1, outro: 1, head: 1, trade: 1 };
+  var PLAN_LEAD = { none: 1, sparse: 1, call: 1, theme: 1, varied: 1 };
+  function chordQuality(rest) {
+    var r = rest.toLowerCase().replace(/[\s()]/g, "").replace("♭", "b").replace("♯", "#").replace("min", "m").replace("-", "m").replace("ø", "m7b5").replace("°", "dim");
+    var map = { "": "maj", maj: "maj", M: "maj", m: "min", "7": "7", m7: "m7", maj7: "maj7", ma7: "maj7", "9": "9", m9: "m9", maj9: "maj9", m11: "m11", "13": "13", "6": "6", m6: "m6", sus4: "sus4", sus: "sus4", sus2: "sus4", dim: "dim", dim7: "dim", m7b5: "m7b5", "5": "5", add9: "add9", "7#9": "7#9", "69": "69", "6/9": "69", "9sus4": "sus4", "7sus4": "sus4", aug: "maj", add: "add9" };
+    if (map[r] !== undefined) return map[r];
+    if (r.indexOf("maj") === 0) return r.indexOf("9") > 0 ? "maj9" : "maj7";
+    if (r.charAt(0) === "m" && r.indexOf("b5") > 0) return "m7b5";
+    if (r.charAt(0) === "m") return r.indexOf("9") > 0 ? "m9" : r.indexOf("7") > 0 ? "m7" : "min";
+    if (r.indexOf("13") >= 0) return "13";
+    if (r.indexOf("9") >= 0) return "9";
+    if (r.indexOf("7") >= 0) return "7";
+    return "maj";
+  }
+  function parseChordSym(sym, keyRoot) {
+    var m = String(sym || "").trim().split("/")[0].match(/^([A-Ga-g])([#b♯♭]?)(.*)$/); if (!m) return null;
+    var base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()], acc = m[2] === "#" || m[2] === "♯" ? 1 : (m[2] === "b" || m[2] === "♭") ? -1 : 0;
+    var q = chordQuality(m[3] || ""); return absChord(((base + acc - keyRoot) % 12 + 12) % 12, q);
+  }
+  function parsePlan(p) {
+    if (typeof p === "string") { var t = p.replace(/```(?:json)?/gi, ""), a = t.indexOf("{"), z = t.lastIndexOf("}"); try { p = JSON.parse(t.slice(a, z + 1)); } catch (e) { return null; } }
+    if (!p || typeof p !== "object" || !Array.isArray(p.sections)) return null;
+    var out = { sections: [] }, rawSecs = p.sections.slice(0, 12), i, j;
+    var firstChord = null; for (i = 0; i < rawSecs.length && !firstChord; i++) { var cs0 = rawSecs[i] && rawSecs[i].chords; if (Array.isArray(cs0) && cs0.length) firstChord = String(cs0[0]).match(/^([A-Ga-g])([#b]?)/); }
+    var key = parseKey(p.key); if (key === null && firstChord) key = parseKey(firstChord[1] + firstChord[2]); if (key === null) return null;
+    out.key = key;
+    var md = String(p.mode || "").toLowerCase(); if (md === "minor") md = "aeolian"; if (md === "major") md = "ionian";
+    out.mode = MODES[md] ? md : "";
+    for (i = 0; i < rawSecs.length; i++) {
+      var rs = rawSecs[i]; if (!rs || !Array.isArray(rs.chords)) continue;
+      var chords = []; for (j = 0; j < rs.chords.length && j < 16; j++) { var c = parseChordSym(rs.chords[j], key); if (c) chords.push(c); }
+      if (chords.length < 2) continue;
+      var kind = String(rs.kind || "verse").toLowerCase(); if (!PLAN_KINDS[kind]) kind = "verse";
+      var lead = String(rs.lead || "theme").toLowerCase(); if (!PLAN_LEAD[lead]) lead = "theme";
+      var bars = clamp(Math.round(Number(rs.bars) || chords.length), 4, 24), dr = Number(rs.drums); if (!isFinite(dr)) dr = 2;
+      out.sections.push({ kind: kind, chords: chords, bars: bars, energy: clamp(typeof rs.energy === "number" ? rs.energy : .6, .1, 1), lead: lead, drums: clamp(Math.round(dr), 0, 2),
+        bass: rs.bass !== false, arp: rs.arp === true, comp: rs.comp !== false, fill: rs.fill !== false && kind !== "intro", crash: kind === "chorus" || kind === "drop" || kind === "solo" || rs.crash === true });
+    }
+    if (out.sections.length < 2) return null;
+    if (!out.mode) { var c0 = out.sections[0].chords[0].q; out.mode = (c0 === "min" || c0 === "m7" || c0 === "m9" || c0 === "m11" || c0 === "m6") ? "aeolian" : (c0 === "7" || c0 === "9" || c0 === "13") ? "mixolydian" : "ionian"; }
+    var st = String(p.style || "").toLowerCase().replace(/[^a-z]/g, ""); st = ({ rockandroll: "rocknroll", hiphop2: "hiphop" })[st] || st; out.style = STYLES[st] && !STYLES[st].solo ? st : "";
+    if (typeof p.bpm === "number" && isFinite(p.bpm)) out.bpm = clamp(Math.round(p.bpm), 50, 150);
+    if (typeof p.title === "string") out.title = p.title.replace(/[^\w\s'&,.!?-]/g, "").trim().slice(0, 40);
+    if (p.band && typeof p.band === "object") {
+      out.band = {};
+      ["pad", "comp", "lead", "arp", "bass", "ans"].forEach(function (r) {
+        if (!(r in p.band)) return; var v = p.band[r];
+        if (v === null || v === false || v === "none") { out.band[r] = "none"; return; }
+        var nm = normInstr(v); if (INSTR_META[nm] || (r === "bass" && (BASS_LOW[nm] || INSTR_META[nm]))) out.band[r] = nm;
+      });
+    }
+    var mo = p.motif;
+    if (mo && Array.isArray(mo.on) && Array.isArray(mo.deg) && mo.on.length === mo.deg.length && mo.on.length >= 2 && mo.on.length <= 10) {
+      var on = mo.on.map(function (x) { return clamp(Math.round(Number(x)), 0, 15); }), deg = mo.deg.map(function (x) { return clamp(Math.round(Number(x)), -3, 10); }), ok = true;
+      for (i = 1; i < on.length; i++) if (!(on[i] > on[i - 1])) ok = false;
+      if (ok && on.every(isFinite) && deg.every(isFinite)) out.motif = { on: on, deg: deg };
+    }
+    return out;
+  }
+
   /* ═══════════════ brief -> spec ═══════════════ */
   function parseKey(k) {
     if (typeof k === "number") return ((k % 12) + 12) % 12;
@@ -464,7 +528,7 @@
     if (typeof b.mode === "string" && MODES[b.mode.toLowerCase()]) o.mode = b.mode.toLowerCase();
     if (b.instruments && typeof b.instruments === "object") {
       o.instruments = {};
-      ["pad", "comp", "lead", "arp", "bass"].forEach(function (r) { var n = b.instruments[r]; if (typeof n === "string") o.instruments[r] = normInstr(n); });
+      ["pad", "comp", "lead", "arp", "bass", "ans"].forEach(function (r) { var n = b.instruments[r]; if (typeof n === "string") o.instruments[r] = n === "none" ? n : normInstr(n); });
     }
     if (b.solo) {
       var sn = String(b.solo).toLowerCase().replace(/[^a-z]/g, ""); sn = SOLO_ALIAS[sn] || sn;
@@ -475,6 +539,14 @@
     if (b.seed !== undefined && b.seed !== null && b.seed !== "") o.seed = typeof b.seed === "number" ? (b.seed >>> 0) : strToSeed(b.seed);
     if (typeof b.stageBars === "number" && isFinite(b.stageBars)) o.stageBars = clamp(Math.round(b.stageBars), 8, 64);
     if (typeof b.note === "string") o.note = b.note.slice(0, 80);
+    if ((b.planSrc || b.plan) && !o.solo && !o.drums) {
+      var pl = parsePlan(b.planSrc || b.plan);
+      if (pl) {
+        o.planSrc = b.planSrc || b.plan;
+        o.plan = pl; if (pl.style) o.style = pl.style; o.key = pl.key; o.mode = pl.mode; if (pl.bpm && typeof b.bpm !== "number") o.bpm = pl.bpm;
+        if (pl.band) { o.instruments = o.instruments || {}; for (var br in pl.band) o.instruments[br] = pl.band[br]; }
+      }
+    }
     return o;
   }
 
@@ -509,7 +581,9 @@
     var bands = STYLES[style].bands, band = bands && bands.length ? bands[rng.int(bands.length)] : null;
     if (band) ["pad", "comp", "lead", "arp", "bass"].forEach(function (r) { if (band[r] !== undefined && !forced[r]) pal[r] = band[r]; });
     /* a second melodic voice that answers the lead and doubles it a third below in big sections */
+    Object.keys(forced).forEach(function (r) { if (forced[r] === "none" && r !== "ans") pal[r] = null; });
     pal.ans = null; if (STYLES[style].solo) return pal;
+    if (forced.ans) { pal.ans = forced.ans === "none" ? null : forced.ans; return pal; }
     if (band && band.ans !== undefined) { pal.ans = band.ans; return pal; }
     for (var tries = 0; tries < 4 && !pal.ans; tries++) { var c = pickInstrument("lead", style, recipe, rng, INSTR_META[pal.lead], null); if (c !== pal.lead && c !== pal.comp && INSTR_META[c]) pal.ans = c; }
     return pal;
@@ -546,13 +620,13 @@
     var recipe0 = stages[0].recipe;
     var forcedI = {}, sk; if (b.instruments) for (sk in b.instruments) forcedI[sk] = b.instruments[sk];
     if (b.solo) { var ss = SOLO_SETUP[b.solo]; for (sk in ss.f) forcedI[sk] = ss.f[sk]; }
-    var mode = b.mode || rng.pick(recipe0.modes), sp0 = STYLES[stages[0].style].progs;
+    var mode = b.mode || rng.pick(recipe0.modes), sp0 = b.plan ? null : STYLES[stages[0].style].progs;
     if (sp0) { var fam = sp0.filter(function (q) { return q.m === mode; }); if (!fam.length) mode = rng.pick(sp0).m; }
     var root = b.key !== undefined ? b.key : rng.pick([0, 2, 3, 5, 7, 9, 9, 10, 2, 7]);
     return {
       seed: seed >>> 0, brief: b, mood: mood, intent: intent, stages: stages, mode: mode, root: root,
       forced: forcedI, solo: b.solo || "", drums: !!b.drums, bpmForce: b.bpm || 0, energyBias: typeof b.energy === "number" ? (b.energy - recipe0.energy) : 0,
-      title: makeTitle(mood === "neutral" && stages.length > 1 ? stages[stages.length - 1].mood : mood, rng)
+      plan: b.plan || null, title: (b.plan && b.plan.title) ? b.plan.title : makeTitle(mood === "neutral" && stages.length > 1 ? stages[stages.length - 1].mood : mood, rng)
     };
   }
 
@@ -575,7 +649,7 @@
     var S = { barNo: 0, stage: -1, stageStart: 0, mode: spec.mode, root: spec.root, bpm: 90, bpmTarget: 90, arcName: "groove", arcIdx: 0, sec: null, secBar: 0, secNo: 0,
               padV: null, compV: null, theme: null, progA: null, progB: null, cycle: 0, bias: spec.energyBias, steer: null,
               pal: null, style: null, styleName: "", recipe: null, tex: null, mask: {}, fixed: null, rub: 0 };
-    var SOLO = spec.solo ? SOLO_SETUP[spec.solo] : null;
+    var SOLO = spec.solo ? SOLO_SETUP[spec.solo] : null, PLAN = spec.plan || null;
     if (spec.drums) S.fixed = { pad: false, comp: false, lead: false, arp: false, bass: false };
     if (SOLO) S.fixed = SOLO.poly ? { drums: false, pad: false } : { drums: false, comp: false, arp: false, bass: false };
     var LAYER_KEYS = { drums: "drums", percussion: "drums", perc: "drums", beat: "drums", bass: "bass", bassline: "bass", pad: "pad", pads: "pad", strings: "pad", atmosphere: "pad", comp: "comp", chords: "comp", harmony: "comp", lead: "lead", melody: "lead", arp: "arp", arpeggio: "arp", sparkle: "arp", fx: "fx", effects: "fx" };
@@ -604,6 +678,7 @@
     }
     function bridgeProg() { return S.style.progs ? buildAbs(rng.pick(S.progPool).seq) : buildProg(rng.pick(PROGS[S.mode])); }
     function makeProgs() {
+      if (PLAN) { S.progA = S.progB = PLAN.sections[0].chords; S.progPool = []; S.planIdx = 0; S.mode = PLAN.mode; S.root = PLAN.key; return; }
       var sp = S.style.progs;
       if (sp) {
         var fam = sp.filter(function (q) { return q.m === S.mode; });
@@ -623,8 +698,8 @@
     }
     function enterStage(i, relative) {
       var st = spec.stages[i];
-      S.stage = i; S.stageStart = S.barNo; S.recipe = st.recipe; S.styleName = st.style; S.style = STYLES[st.style];
-      if (relative && !S.style.progs) { var nm = rng.pick(st.recipe.modes); S.root = relativeRoot(S.root, S.mode, nm); S.mode = nm; }
+      S.stage = i; S.stageStart = S.barNo; S.recipe = st.recipe; S.styleName = st.style; S.style = PLAN ? Object.assign({}, STYLES[st.style], { harm: 1, progs: null }) : STYLES[st.style];
+      if (relative && !S.style.progs && !PLAN) { var nm = rng.pick(st.recipe.modes); S.root = relativeRoot(S.root, S.mode, nm); S.mode = nm; }
       S.pal = makePalette(st.style, st.recipe, rng, spec.forced);
       S.bpmTarget = spec.bpmForce || computeBpm(S.style, st.recipe);
       if (S.barNo === 0) S.bpm = S.bpmTarget;
@@ -651,6 +726,12 @@
       return out;
     }
     function makeTheme() {
+      if (PLAN && PLAN.motif) {
+        var mo = PLAN.motif, d1 = mo.deg.slice(), L2 = mo.on.length, sh2 = rng.pick([1, -1, 2]), mid = Math.floor(L2 / 2);
+        d1[L2 - 1] += rng.pick([-2, -1, 1, 2]);
+        return { m: [{ on: mo.on.slice(), deg: mo.deg.slice() }, { on: mo.on.slice(), deg: d1 }, { on: mo.on.slice(), deg: mo.deg.map(function (x) { return x + sh2; }) },
+                     { on: [mo.on[0], mo.on[mid], mo.on[L2 - 1]], deg: [mo.deg[0], mo.deg[mid], rng.pick([0, 4, 0])] }] };
+      }
       var feel = S.style.feel, dens = S.recipe.density;
       var r0 = pickRhythm(feel, dens), r2 = rng.chance(.5) ? r0.slice() : pickRhythm(feel, dens);
       var start = rng.pick([4, 2, 4, 5, 7]);
@@ -1046,15 +1127,19 @@
     function startSection() {
       applySteer();
       if (S.stage < spec.stages.length - 1 && S.barNo - S.stageStart >= spec.stages[S.stage].bars) enterStage(S.stage + 1, true);
-      var arc = ARCS[S.arcName], tpl = arc[S.arcIdx % arc.length];
-      if (S.arcIdx > 0 && S.arcIdx % arc.length === 0) {
+      var arc = ARCS[S.arcName], tpl = arc[S.arcIdx % arc.length], ps = null;
+      if (PLAN) {
+        ps = PLAN.sections[S.planIdx % PLAN.sections.length]; S.planIdx++;
+        tpl = { k: ps.kind, n: ps.bars / 4, e: ps.energy, lead: ps.lead, arp: ps.arp ? 1 : 0, drums: ps.drums, bass: ps.bass, fill: ps.fill, crash: ps.crash, lift: ps.kind === "solo" || ps.kind === "drop", cut: ps.kind === "intro" ? .6 : ps.kind === "outro" ? .6 : 0, riser: ps.kind === "build" };
+        if (S.planIdx > 0 && S.planIdx % PLAN.sections.length === 0) S.cycle++;
+      } else if (S.arcIdx > 0 && S.arcIdx % arc.length === 0) {
         S.cycle++;
         if (rng.chance(.5)) makeProgs();
         if (rng.chance(.55)) S.theme = makeTheme();
         if (S.cycle % 3 === 0 && rng.chance(.5)) { var rel = rng.pick([7, 5, 2, 0]); if (rel) S.root = (S.root + rel) % 12; }
       }
       S.arcIdx++;
-      var harm = S.style.harm, prog = (tpl.k === "chorus" || tpl.k === "drop" || tpl.k === "climax" || tpl.k === "swell" || tpl.k === "rise") ? S.progB : (tpl.k === "bridge" ? bridgeProg() : S.progA), L = prog.length * harm, bars = Math.ceil(tpl.n * 4 / L) * L;
+      var harm = S.style.harm, prog = ps ? ps.chords : (tpl.k === "chorus" || tpl.k === "drop" || tpl.k === "climax" || tpl.k === "swell" || tpl.k === "rise") ? S.progB : (tpl.k === "bridge" ? bridgeProg() : S.progA), L = prog.length * harm, bars = Math.ceil(tpl.n * 4 / L) * L;
       var e = clamp(.18 + S.recipe.energy * .8 * (.35 + .65 * tpl.e) + S.bias, .1, 1);
       var dl = tpl.drums; if (S.style.drums === 0) dl = 0; else if (S.style.drums === 1 && dl === 2) dl = 1;
       S.sec = {
@@ -1062,7 +1147,8 @@
         layers: { comp: S.style.solo ? true : tpl.k === "intro" ? rng.chance(.55) : tpl.k === "break" ? rng.chance(.8) : true, bass: !!tpl.bass && e >= .15, drums: dl, arp: rng.chance(tpl.arp * (.5 + e * .7)) },
         compVar: rng.int(4), bassVar: rng.int(6), drumVar: rng.int(4), loop: 0, ans: false
       };
-      if (tpl.k === "intro" && S.style.drums === 2 && !S.sec.layers.comp) S.sec.layers.arp = true;
+      if (ps) { S.sec.layers.comp = ps.comp; S.sec.layers.arp = ps.arp && !!S.pal.arp; S.sec.layers.bass = ps.bass && e >= .15; S.sec.loop = 0; }
+      if (tpl.k === "intro" && S.style.drums === 2 && !S.sec.layers.comp && !ps) S.sec.layers.arp = true;
       S.sec.layers.ans = !!S.pal.ans && rng.chance(.25 + .55 * e);
       S.secBar = 0; S.secNo++;
       S.secStartBarNo = S.barNo;
@@ -1144,7 +1230,7 @@
     function hold() { spec.bpmForce = S.bpm; S.bpmTarget = S.bpm; }
     function release(nat) { spec.bpmForce = 0; if (nat) S.bpmTarget = clamp(nat, 50, 150); }
     function info() {
-      return { solo: spec.solo || "", drums: !!spec.drums, root: S.root, modeName: S.mode, seed: seed, title: spec.title, mood: spec.stages[Math.max(0, S.stage)].mood, journey: spec.stages.map(function (s) { return s.mood; }), intent: spec.intent,
+      return { solo: spec.solo || "", drums: !!spec.drums, planned: !!PLAN, root: S.root, modeName: S.mode, seed: seed, title: spec.title, mood: spec.stages[Math.max(0, S.stage)].mood, journey: spec.stages.map(function (s) { return s.mood; }), intent: spec.intent,
                style: S.styleName, styleName: S.style ? S.style.name : "", bpm: Math.round(S.bpm), key: NOTE_NAMES[S.root] + " " + MODE_LABEL[S.mode], palette: S.pal, section: S.sec ? S.sec.kind : "", bar: S.barNo, muted: Object.keys(S.mask).filter(function (k) { return S.mask[k] === false; }) };
     }
     return { spec: spec, seed: seed, nextBar: nextBar, steer: steer, info: info, release: release, hold: hold, state: function () { return S; } };
@@ -1798,7 +1884,8 @@
     opts = opts || {};
     var c = ensureCtx(); if (!c) { emit("error", { message: "Web Audio is not supported here" }); return null; }
     var pb = parseBrief(brief), seed = pb.seed !== undefined ? pb.seed : randomSeed();
-    var keep = {}; for (var k in pb) if (k !== "seed") keep[k] = pb[k];
+    var keep = {}; for (var k in pb) if (k !== "seed" && k !== "plan") keep[k] = pb[k];
+    if (pb.planSrc) { delete keep.key; delete keep.mode; delete keep.bpm; delete keep.instruments; delete keep.style; }   /* the plan carries these; a fresh piece must not inherit its key and tempo */
     P.lastBrief = keep;
     var comp = Composer(pb, seed), eng = Engine(c, P.volG, { lite: P.quality >= 1 }), now = c.currentTime; eng.setQuality(P.quality);
     if (!opts.keepMix) P.mix = null;
@@ -1819,7 +1906,8 @@
     if (!P.lastBrief) return null;
     var pc = P.piece;
     if (pc && Date.now() - pc.t0 < 25000) { var st = pc.comp.info().style; taste.styles[st] = (taste.styles[st] || 0) - .5; saveTaste(); }
-    return play(P.lastBrief);
+    var nb = {}; for (var q in P.lastBrief) nb[q] = P.lastBrief[q]; delete nb.planSrc;   /* a new piece composes its own structure */
+    return play(nb);
   }
   function pause() {
     if (!P.piece || P.paused || !P.ctx) return;

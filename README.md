@@ -226,3 +226,7 @@ New instruments: electric guitar (`eguitar`), distorted guitar (`dguitar`), lead
 **Drum solos**: `{"solo":"drums","style":"rock"}` plays continuous drums (no breaks), with fills, ghost notes and percussion layers that change every few bars.
 
 Every piece also picks a band (a set of instruments that belong together) and one of several progressions, grooves, bass lines and song forms per seed, so pieces differ much more than before.
+
+## AI composer (v8)
+
+When you ask for music, Echo (the chat model) now writes a **composition plan** as JSON: key, tempo, genre, band, a hook (motif) and a list of sections, each with one chord per bar, energy, lead behaviour and drum level. The on-device engine validates the plan (`parsePlan`: bad chords, instruments or timings are clamped or dropped) and performs it. If the AI is slow (9.5 s), offline, or the plan is invalid, the built-in rule-based composer plays instead, so music always starts. "Play another" asks for a fresh plan. Plans are stored with liked pieces so they replay exactly.
