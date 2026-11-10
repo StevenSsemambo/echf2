@@ -1822,7 +1822,10 @@
 
   function tick() {
     var pc = P.piece; if (!pc || P.paused || !P.ctx) return;
-    var c = P.ctx; health(pc);
+    var c = P.ctx;
+    /* the browser can suspend or "interrupt" audio (after the microphone, a call, another app): bring it back */
+    if (c.state !== "running" && !(global.document && global.document.hidden)) { try { c.resume(); } catch (e) {} }
+    health(pc);
     var list = [pc].concat(P.outs), k;
     for (k = 0; k < list.length; k++) drive(list[k], c);
     P.outs = P.outs.filter(function (o) {
@@ -1838,12 +1841,18 @@
         if (pc === P.piece && !pc.finished) { pc.finished = true; setTimeout(function () { if (P.piece === pc) { emit("mixend", {}); stop(); } }, 400); }
         break;
       }
-      var bar = pc.comp.nextBar();
+      var bar;
+      try { bar = pc.comp.nextBar(); } catch (e) {
+        /* a composer fault must never mean silence: after two faults in a row, swap in a fresh built-in composer */
+        pc.faults = (pc.faults || 0) + 1; emit("error", { message: String(e && e.message || e) });
+        if (pc.faults >= 2) { pc.faults = 0; try { var lb = {}; for (var q in (P.lastBrief || {})) lb[q] = P.lastBrief[q]; delete lb.planSrc; lb.seed = randomSeed(); pc.comp = Composer(parseBrief(lb), lb.seed); } catch (e2) {} }
+        pc.nextT += .25; continue;
+      }
       if (P.mix && P.mix.ctl) {
         var made = P.mix.ctl.afterBar(pc, bar);
         if (made) { P.outs.push(P.piece); P.piece = made; mediaSession(info()); emit("mixtrack", { info: info(), index: P.mix.ctl.idx, total: P.mix.ctl.plan.tracks.length }); }
       }
-      pc.eng.playBar(bar, pc.nextT);
+      try { pc.eng.playBar(bar, pc.nextT); } catch (e) { emit("error", { message: String(e && e.message || e) }); }
       if (bar.secStart && pc === P.piece) {
         (function (b, at) { setTimeout(function () { if (P.piece === pc) emit("section", { section: b.sec.kind, mood: b.mood, style: b.style, bpm: Math.round(b.bpm), info: pc.comp.info() }); }, Math.max(0, (at - c.currentTime) * 1000)); })(bar, pc.nextT);
       }
@@ -1863,7 +1872,11 @@
   }
   function startTimer() { if (!P.timer) P.timer = setInterval(tick, TICK); }
   function stopTimer() { if (P.timer) { clearInterval(P.timer); P.timer = null; } }
-  if (global.document && global.document.addEventListener) global.document.addEventListener("visibilitychange", function () { if (!global.document.hidden) tick(); });
+  if (global.document && global.document.addEventListener) {
+    global.document.addEventListener("visibilitychange", function () { if (!global.document.hidden) tick(); });
+    /* any tap brings suspended audio back (some browsers only allow resuming from a user gesture) */
+    ["pointerdown", "touchend", "keydown"].forEach(function (ev) { global.document.addEventListener(ev, function () { if (P.piece && !P.paused && P.ctx && P.ctx.state !== "running") { try { P.ctx.resume(); } catch (e) {} } }, true); });
+  }
 
   function seedStr(pc) { return seedToStr(pc.seed); }
   function info() {

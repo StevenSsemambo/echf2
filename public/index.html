@@ -453,7 +453,7 @@ function startRecognitionSync(onInterim, onFinal, onError) {
   if (!SR) { onError("no-support"); return null; }
   const rec = new SR(); rec.continuous=true; rec.interimResults=true; rec.lang="en-US"; rec.maxAlternatives=1;
   let accFinal="", silenceT=null;
-  const fire = ()=>{ const txt=accFinal.trim(); accFinal=""; if(txt) onFinal(txt); };
+  const fire = ()=>{ const txt=accFinal.trim(); accFinal=""; onFinal(txt); };   // always report the end (empty = heard nothing) so the mic UI never stays stuck on "Listening"
   rec.onresult = e => {
     if(silenceT){clearTimeout(silenceT);silenceT=null;}
     let interim="",final="";
@@ -922,7 +922,7 @@ function loadEchoMusic(){
   if(_musicPromise) return _musicPromise;
   _musicPromise=new Promise((res,rej)=>{
     const el=document.createElement("script");
-    el.src="/echo-music.js?v=8"; el.async=true;
+    el.src="/echo-music.js?v=9"; el.async=true;
     el.onload=()=>{ if(window.EchoMusic){ window.dispatchEvent(new Event("echomusic-ready")); res(window.EchoMusic); } else rej(new Error("music engine missing")); };
     el.onerror=()=>rej(new Error("could not load the music engine"));
     document.head.appendChild(el);
@@ -2243,7 +2243,7 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
   useEffect(()=>{ window.__echoLive={voiceMode,screen}; },[voiceMode,screen]);
   // ── music: duck while Echo speaks, go silent while the mic listens, unlock audio on first touch, preload when idle
   useEffect(()=>{ const M=window.EchoMusic; if(M) M.duck(speaking); },[speaking]);
-  useEffect(()=>{ const M=window.EchoMusic; if(M) M.hold(listening); },[listening]);
+  useEffect(()=>{ const M=window.EchoMusic; if(M) M.hold(listening); if(listening){ const t=setTimeout(()=>{ try{ M&&M.hold(false); }catch(e){} },70000); return()=>clearTimeout(t); } },[listening]);   // never leave the music muted
   useEffect(()=>{
     const un=()=>{ if(window.EchoMusic){ try{window.EchoMusic.unlock();}catch(e){} document.removeEventListener("pointerdown",un); } };
     document.addEventListener("pointerdown",un,{passive:true});
@@ -2287,7 +2287,7 @@ Open with ONE warm sentence that references SOMETHING SPECIFIC from what you kno
     const begin=tries=>{
       me=startRecognitionSync(
         text=>setTranscript(text),
-        text=>{if(recRef.current!==me)return;setListening(false);setTranscript("");recRef.current=null;restore();onFinalRef.current?.(text);},
+        text=>{if(recRef.current!==me)return;setListening(false);setTranscript("");recRef.current=null;restore();if(text)onFinalRef.current?.(text);},
         err=>{
           if(recRef.current!==me) return; // we stopped it ourselves, nothing to report
           if(err==="aborted"&&tries<2){ recRef.current=null; setTimeout(()=>{ if(micRestoreRef.current===restore){ begin(tries+1); recRef.current=me; } },400); return; }
