@@ -735,7 +735,11 @@
       var feel = S.style.feel, dens = S.recipe.density;
       var r0 = pickRhythm(feel, dens), r2 = rng.chance(.5) ? r0.slice() : pickRhythm(feel, dens);
       var start = rng.pick([4, 2, 4, 5, 7]);
-      var d0 = walk(r0.length, start), m0 = { on: r0, deg: d0 };
+      /* a hook has a shape: rise and fall, a leap that steps back, a repeated note that jumps, a falling line... */
+      var HOOKS = [[0, 1, 2, 1, 0, 1], [0, 2, 1, 0, -1, 0], [0, 0, 3, 2, 1, 0], [2, 1, 0, 1, 2, 2], [0, 2, 4, 2, 1, 0], [4, 3, 2, 0, 1, 0], [0, 1, 0, -1, 0, 2], [0, 0, 2, 2, 4, 3], [3, 2, 3, 1, 2, 0]];
+      var shape = rng.pick(HOOKS), d0 = r0.map(function (x, j) { return start + (j < shape.length ? shape[j] : shape[shape.length - 1] - (j - shape.length + 1) * (rng.chance(.6) ? 1 : 0)); });
+      d0 = d0.map(function (x) { return clamp(x, -2, 10); });
+      var m0 = { on: r0, deg: d0 };
       var d1 = d0.slice(), L = d1.length;
       d1[L - 1] += rng.pick([-2, -1, 1, 2]); if (L > 2) d1[L - 2] += rng.pick([-1, 1]);
       var m1 = { on: r0.slice(), deg: d1 };
@@ -930,7 +934,7 @@
       for (var s2 = 0; s2 < 16; s2++) {
         if (pat.charAt(s2) !== "x") continue;
         var sus = pi === 0, d = sus ? 3.8 : (s2 % 4 === 0 ? 1.5 : 1.0), vv = base * (s2 % 4 === 0 ? 1 : .72) * (1 + (rng() - .5) * .12);
-        [0, 7, 12].forEach(function (x) { out.push({ s: s2, r: "comp", i: S.pal.comp, m: rootM + x, d: d, v: vv, p: 2 }); });
+        [0, 7, 12].forEach(function (x) { out.push({ s: s2, r: "comp", i: S.pal.comp, m: rootM + x, d: d, v: vv, p: x === 12 ? 3 : 2 }); });
       }
       return out;
     }
@@ -942,7 +946,7 @@
       for (var k = 0; k < rf.on.length; k++) {
         var st = rf.on[k], nx = k < rf.on.length - 1 ? rf.on[k + 1] : 16, d = Math.max(1, (nx - st) * .8), vv = base * (st % 4 === 0 ? 1.05 : .8), m = rootM + rf.iv[k];
         out.push({ s: st, r: "comp", i: S.pal.comp, m: m, d: d, v: vv, p: 2 });
-        if (rf.iv[k] === 0 && st % 4 === 0) out.push({ s: st, r: "comp", i: S.pal.comp, m: m + 7, d: d, v: vv * .9, p: 2 });
+        if (rf.iv[k] === 0 && st % 4 === 0) out.push({ s: st, r: "comp", i: S.pal.comp, m: m + 7, d: d, v: vv * .9, p: 3 });
       }
       return out;
     }
@@ -1621,7 +1625,7 @@
       lp.type = "lowpass"; lp.frequency.value = clamp(cut + f * .8, cut, cut + 1500); lp.Q.value = .6;
       g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(peak * v, t + .005);
       g.gain.exponentialRampToValueAtTime(peak * v * .55, t + Math.max(.09, hold * .9)); g.gain.exponentialRampToValueAtTime(.0001, t + hold + rel);
-      o1.forEach(function (c) { var os = E.osc(c[0], f * (c[2] || 1), t, end, c[1]); if (vib) E.vib.connect(os.detune); var cg = ctx.createGain(); cg.gain.value = c[3] === undefined ? 1 : c[3]; os.connect(cg); cg.connect(p); });
+      (E.lite ? o1.slice(0, 2) : o1).forEach(function (c) { var os = E.osc(c[0], f * (c[2] || 1), t, end, c[1]); if (vib) E.vib.connect(os.detune); var cg = ctx.createGain(); cg.gain.value = c[3] === undefined ? 1 : c[3]; os.connect(cg); cg.connect(p); });
       p.connect(sh); sh.connect(mid); mid.connect(lp); lp.connect(g); g.connect(o);
       if (!E.lite) E.noise(t, .025, "bandpass", Math.min(4000, f * 6), 1.2, .05 * v, .012, o);
     }
@@ -1737,10 +1741,10 @@
     };
 
     /* ── voice budget: a phone can only synthesize so many voices at once ── */
-    var voices = [], cap = E.lite ? 40 : 90;
+    var voices = [], cap = E.lite ? 32 : 64;
     E.quality = E.lite ? 1 : 0;
     /* 0 = full, 1 = lite (fewer oscillators and voices), 2 = minimal. Can be changed while a piece plays. */
-    E.setQuality = function (q) { E.quality = q; E.lite = q >= 1; cap = q >= 2 ? 18 : q === 1 ? 40 : 90; };
+    E.setQuality = function (q) { E.quality = q; E.lite = q >= 1; cap = q >= 2 ? 16 : q === 1 ? 32 : 64; };
     E.admit = function (ev, t, cost, dur) {
       var n = 0, k; for (k = voices.length - 1; k >= 0; k--) { if (voices[k] < t - .05) voices.splice(k, 1); else n++; }
       var prio = ev.p || 2;
@@ -1820,9 +1824,16 @@
     return true;
   }
 
+  var lastTickAt = 0, stalls = [];
   function tick() {
     var pc = P.piece; if (!pc || P.paused || !P.ctx) return;
-    var c = P.ctx;
+    var c = P.ctx, nowW = Date.now();
+    /* the page itself froze for a moment (main thread busy): two freezes within 20 s means this phone needs a lighter sound */
+    if (lastTickAt && nowW - lastTickAt > 900 && nowW - lastTickAt < 5000 && !(global.document && global.document.hidden)) {
+      stalls.push(nowW); stalls = stalls.filter(function (t) { return nowW - t < 20000; });
+      if (stalls.length >= 2 && P.quality < 2) { P.quality++; pc.eng.setQuality(P.quality); stalls = []; emit("quality", { quality: P.quality }); }
+    }
+    lastTickAt = nowW;
     /* the browser can suspend or "interrupt" audio (after the microphone, a call, another app): bring it back */
     if (c.state !== "running" && !(global.document && global.document.hidden)) { try { c.resume(); } catch (e) {} }
     health(pc);
@@ -1868,7 +1879,7 @@
     pc.h.last = now;
     var lag = (now - pc.h.w0) / 1000 - (c.currentTime - pc.h.a0);
     if (pc.h.lag0 === null) { pc.h.lag0 = lag; return; }
-    if (lag - pc.h.lag0 > .35 && P.quality < 2) { P.quality++; pc.eng.setQuality(P.quality); pc.h.lag0 = lag; emit("quality", { quality: P.quality }); }
+    if (lag - pc.h.lag0 > .2 && P.quality < 2) { P.quality++; pc.eng.setQuality(P.quality); pc.h.lag0 = lag; emit("quality", { quality: P.quality }); }
   }
   function startTimer() { if (!P.timer) P.timer = setInterval(tick, TICK); }
   function stopTimer() { if (P.timer) { clearInterval(P.timer); P.timer = null; } }
